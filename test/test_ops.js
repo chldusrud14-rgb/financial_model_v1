@@ -1,0 +1,79 @@
+/* 운영기간(v2 engine2.js runOps) ↔ 원본 대조.
+   tranches/상환스케줄/목표값을 reference json에서 그대로 읽어 손으로 옮겨적는
+   과정에서 생기는 오타를 없앤다. */
+const fs = require('fs');
+const path = require('path');
+const M = require('../src2/engine2.js');
+
+const ref = JSON.parse(fs.readFileSync(path.join(__dirname, '../reference/dangjin_reference.json'), 'utf8'));
+
+function findTranche(name) { return ref.tranches.find(t => t.name === name); }
+function scheduleFor(letter) {
+  const s = ref.repaySchedule_case3[letter];
+  return s ? s.map(([, ratio]) => ratio) : null;
+}
+
+const trancheDefs = [
+  ['선순위A', 'A'], ['선순위B', 'B'], ['선순위C', 'C'], ['선순위D', null], ['후순위', null]
+];
+
+const dangjin = {
+  projectName: '당진 태양광발전', ppy: 4,
+  capacityMW: ref.project.capacityMW,
+  capacityFactor: ref.project.capacityFactor * 100,
+  degradation: ref.project.degradation * 100,
+  auxRate: 0,
+  constructionStart: ref.project.constructionStart,
+  constructionMonths: ref.project.constructionMonths,
+  operationYears: ref.project.operationYears,
+  capexEok: ref.funding.TIC_exIDC / 100,
+  dsraEok: ref.funding.DSRA / 100,
+  opexEok: 49.8, opexEscal: 0.7,
+  opexSubShare: 34685.50065500555 / 105377.38133925629 * 100,
+  spendCurve: ref.spendCurve_KRWm,
+  tariff: ref.project.tariff_wavg, tariffEscal: 0,
+  equityEok: ref.funding.equity / 100, equityOrder: ref.funding.equityOrder,
+  tranches: trancheDefs.map(([name, letter]) => {
+    const t = findTranche(name);
+    return {
+      name: t.name, amountEok: t.amount / 100, order: t.order,
+      rateC: t.rateCon * 100, rateO: t.rateOp * 100,
+      graceYears: t.graceYears, repayYears: t.repayYears, method: t.method,
+      repayStart: letter ? t.repayStart : null,
+      schedule: letter ? scheduleFor(letter) : null
+    };
+  }),
+  depRatio: 95, depYears: 20, taxMode: 1, taxFlat: 21, lossRate: 80,
+  decomEok: ref.results.철거비 / 100,
+  dsraMonths: 6, minCash: 10, divDSCR: 1.1, divCumDSCR: 1.15, divStartYear: 2, discount: 5.5
+};
+
+const r = M.computeModel(dangjin);
+const k = r.kpi;
+
+function cmp(label, got, want, tol) {
+  const diff = Math.abs(got - want);
+  const bad = diff > tol;
+  console.log((bad ? '  << ' : '  OK  ') + label + ': ' + got.toFixed(4) + ' (원본 ' + want.toFixed(4) + ', diff ' + diff.toFixed(4) + ')');
+  return !bad;
+}
+
+console.log('=== 운영기간 결과 대조 (reference.results) ===');
+let ok = true;
+ok = cmp('총영업수익(20yr)', k.totalRevenue, ref.results.총영업수익_20yr, 1) && ok;
+ok = cmp('총영업비용(20yr)', k.totalOpex, ref.results.총영업비용_20yr, 1) && ok;
+ok = cmp('총선순위이자', k.totalInterest, ref.results.총선순위이자, 1) && ok;
+ok = cmp('총법인세', k.totalTax, ref.results.총법인세, 5) && ok;
+console.log('  (참고) 분기 최소DSCR:', k.minDSCR.toFixed(4), '/ 연 합산 최소DSCR:', k.minDSCRAnnual.toFixed(4));
+ok = cmp('최소단순DSCR(연 합산 기준)', k.minDSCRAnnual, ref.results.최소단순DSCR, 0.05) && ok;
+ok = cmp('최소누적DSCR', k.minCumDSCR, ref.results.최소누적DSCR, 0.05) && ok;
+ok = cmp('연차배당', k.totalDividend, ref.results.연차배당 + ref.results.청산배당, 50) && ok;
+
+console.log('\n=== 참고 (미구현 항목 영향으로 아직 불일치 예상 — item 2/3) ===');
+console.log('  projectIRR 세전/세후:', (k.projectIRRPre * 100).toFixed(2) + '% / ' + (k.projectIRR * 100).toFixed(2) + '%',
+  '(원본 ' + (ref.results.projectIRR_preTax * 100).toFixed(2) + '% / ' + (ref.results.projectIRR_postTax * 100).toFixed(2) + '%)');
+console.log('  equityIRR(FCFE/배당):', (k.equityIRR * 100).toFixed(2) + '% / ' + (k.dividendIRR * 100).toFixed(2) + '%',
+  '(원본 ' + (ref.results.equityIRR_FCFE * 100).toFixed(2) + '% / ' + (ref.results.equityIRR_dividend * 100).toFixed(2) + '%)');
+
+console.log('\n' + (ok ? '핵심 채무/세무/DSCR 지표 일치' : '불일치 항목 있음 — 위 << 표시 확인'));
+process.exitCode = ok ? 0 : 1;

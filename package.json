@@ -1,0 +1,16 @@
+{
+  "name": "solar-fm",
+  "version": "0.2.0",
+  "description": "태양광 PF 재무모델 생성기 — 웹 key-in → 수익률 산출 + live Excel 추출",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.js",
+    "sample": "node scripts/sample.js",
+    "test:ref": "node test/test_dangjin.js",
+    "test:ops": "node test/test_ops.js",
+    "test:e2e": "node test/e2e.js 1 && node test/e2e.js 2 && node test/e2e.js 3",
+    "test:ui": "node test/uitest.js"
+  },
+  "dependencies": { "exceljs": "^4.4.0" },
+  "devDependencies": { "jsdom": "^24.0.0" }
+}
