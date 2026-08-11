@@ -288,8 +288,17 @@ Project IRR/Equity IRR인데, 이건 이 항목이 아니라 **2번(Project IRR
 - v1의 `index.html`(사이드바·탭·차트 등 풀 UI)과 통합하지 않고 별도
   파일로 분리해뒀음 — v1을 폐기할지, 탭으로 합칠지는 미결정.
 
-### 6. 배포 정리
-ExcelJS를 CDN 대신 인라인으로 넣어 오프라인 동작 (사내망 대응, +1MB).
+### 6. 배포 정리 — 완료 (2026-08-10)
+`node_modules/exceljs/dist/exceljs.min.js`을 빌드 시점에 인라인.
+`src/index.html`/`src2/index2.html`의 CDN `<script src=...>`를
+`__EXCELJS__` 플레이스홀더로 바꾸고 `build.js`/`build2.js`가 치환.
+결과물 크기: v1 1,018.8KB / v2 991.5KB (예상대로 +1MB 안팎).
+`npm run test:ui`/`test:ui2`(jsdom)로 인라인 후에도 정상 동작 확인 —
+이제 두 산출물 다 완전히 오프라인에서 동작한다(외부 네트워크 요청 없음).
+
+**남은 STATUS.md 항목 1~6번 전부 완료.** v2(분기·5트랜치) 엔진·엑셀
+빌더·UI·오프라인 배포까지 전 구간 확인됨. 남은 건 "남아있는 v1 대비
+미구현 항목"(BS 시트/SMP+REC 변동단가/REC 가중치/VPP/재조달) 정도.
 
 ---
 
