@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node scripts/build.js",
     "sample": "node scripts/sample.js",
+    "sample2": "node scripts/sample2.js",
     "test:ref": "node test/test_dangjin.js",
     "test:ops": "node test/test_ops.js",
     "test:e2e": "node test/e2e.js 1 && node test/e2e.js 2 && node test/e2e.js 3",
