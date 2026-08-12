@@ -69,12 +69,13 @@
   var SHAREHOLDERS = [{ name: '출자자1', stakePct: 100 }];
 
   // 민감도 분석 시나리오 — 판매단가/총투자비/운영비는 %조정, 이자율은 bp
-  // 조정(모든 트랜치 건설·운영금리에 동일하게 가산). 기본 3행은 시작
+  // 조정(모든 트랜치 건설·운영금리에 동일하게 가산), 총사업비 변동은
+  // 억원 단위 절대 가산(%조정과 별개로 같이 적용됨). 기본 3행은 시작
   // 템플릿일 뿐, 값은 전부 직접 편집 가능.
   var SENS_ROWS = [
-    { name: 'Base', tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0 },
-    { name: 'Upside', tariffPct: 10, capexPct: -5, opexPct: -5, ratebp: -50 },
-    { name: 'Downside', tariffPct: -10, capexPct: 10, opexPct: 10, ratebp: 50 }
+    { name: 'Base', tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0, capexAbsEok: 0 },
+    { name: 'Upside', tariffPct: 10, capexPct: -5, opexPct: -5, ratebp: -50, capexAbsEok: 0 },
+    { name: 'Downside', tariffPct: -10, capexPct: 10, opexPct: 10, ratebp: 50, capexAbsEok: 0 }
   ];
   var lastSensResults = null;
 
@@ -284,6 +285,7 @@
     tr.appendChild(cell(sc.capexPct, 'capexPct'));
     tr.appendChild(cell(sc.opexPct, 'opexPct'));
     tr.appendChild(cell(sc.ratebp, 'ratebp'));
+    tr.appendChild(cell(sc.capexAbsEok, 'capexAbsEok'));
     var rmTd = document.createElement('td');
     var rm = document.createElement('button');
     rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
@@ -301,7 +303,7 @@
     var box = $('#sensBox');
     box.innerHTML = '';
     var t = el('table', 'tr');
-    t.innerHTML = '<thead><tr><th>시나리오</th><th>판매단가(%)</th><th>총투자비(%)</th><th>운영비(%)</th><th>이자율(bp)</th><th></th></tr></thead>';
+    t.innerHTML = '<thead><tr><th>시나리오</th><th>판매단가(%)</th><th>총투자비(%)</th><th>운영비(%)</th><th>이자율(bp)</th><th>총사업비 변동(억원)</th><th></th></tr></thead>';
     var tb = document.createElement('tbody');
     SENS_ROWS.forEach(function (sc, idx) { tb.appendChild(sensRow(sc, idx)); });
     t.appendChild(tb);
@@ -322,6 +324,8 @@
   // 판매단가/총투자비/운영비는 배율(%), 이자율은 %p(bp/100)를 기본 입력에
   // 더해 새 입력 객체를 만든다 — 트랜치 개별 rateC/rateO를 모두 같은
   // bp만큼 평행이동, tariffTracks/opexItems가 있으면 그 항목들도 같이 조정.
+  // 총사업비 변동(억원)은 %조정과 별개로 절대금액을 더/뺀다(둘 다 채우면
+  // 둘 다 같이 적용됨 — 순서는 %조정 먼저, 그다음 절대금액 가산).
   function applyScenario(baseInp, sc) {
     var c = JSON.parse(JSON.stringify(baseInp));
     var tf = 1 + (sc.tariffPct || 0) / 100;
@@ -330,7 +334,7 @@
     var rb = (sc.ratebp || 0) / 100;
     if (c.tariff != null) c.tariff = c.tariff * tf;
     if (c.tariffTracks) c.tariffTracks.forEach(function (t) { t.price = t.price * tf; });
-    if (c.capexEok != null) c.capexEok = c.capexEok * cf;
+    if (c.capexEok != null) c.capexEok = c.capexEok * cf + (sc.capexAbsEok || 0);
     if (c.opexEok != null) c.opexEok = c.opexEok * of;
     if (c.opexItems) c.opexItems.forEach(function (it) { it.annualKRWm = it.annualKRWm * of; });
     if (c.tranches) c.tranches.forEach(function (t) {
@@ -788,7 +792,7 @@
   $('#shbox').addEventListener('input', updateShareholderSum);
   buildSensGrid();
   $('#sensAdd').addEventListener('click', function () {
-    SENS_ROWS.push({ name: '시나리오' + (SENS_ROWS.length + 1), tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0 });
+    SENS_ROWS.push({ name: '시나리오' + (SENS_ROWS.length + 1), tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0, capexAbsEok: 0 });
     buildSensGrid();
   });
   $('#sensRun').addEventListener('click', runSensitivity);
