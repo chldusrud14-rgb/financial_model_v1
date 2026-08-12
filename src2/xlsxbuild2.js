@@ -384,14 +384,14 @@
     if (model.sensitivity && model.sensitivity.length) {
       (function () {
         var ws = wb.addWorksheet('민감도', { properties: { tabColor: { argb: 'FF14483A' } } });
-        ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 16;
-        for (var ci = 0; ci < 11; ci++) ws.getColumn(3 + ci).width = 14;
+        ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 18;
+        for (var ci = 0; ci < 10; ci++) ws.getColumn(3 + ci).width = 14;
         title(ws, '민감도 분석 — 시나리오별 핵심 지표 비교');
         var r = 4;
-        ws.getCell('B' + r).value = '판매단가/총투자비/운영비는 %조정, 이자율은 bp(1/100%) 조정, 총사업비 변동은 억원 단위 절대 가산(%조정과 별개로 같이 적용됨). 화면(생성기)에서 지정한 시나리오를 각각 독립적으로 재계산한 값 — 라이브 수식이 아니라 스냅샷임.';
+        ws.getCell('B' + r).value = '판매단가/총투자비/운영비/금리는 델타가 아니라 절대값 — 빈 칸이면 그 시나리오는 "사업 기본 가정"에 입력한 값을 그대로 쓴다. Base(현재 입력값)는 시나리오를 하나도 안 바꾼 기준선. 화면(생성기)에서 지정한 시나리오를 각각 독립적으로 재계산한 값 — 라이브 수식이 아니라 스냅샷임.';
         ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FF6B7B76' } };
         r += 2;
-        var heads = ['시나리오', '판매단가Δ[%]', '총투자비Δ[%]', '운영비Δ[%]', '이자율Δ[bp]', '총사업비변동Δ[억원]',
+        var heads = ['시나리오', '판매단가[원/kWh]', '총투자비[억원]', '운영비[억원]', '금리[%]',
           'Equity IRR(배당)', 'Equity IRR(FCFE)', 'Project IRR', '최소DSCR', 'NPV[억원]', '투자배수[x]'];
         heads.forEach(function (h, idx) {
           var c = ws.getCell(colLetter(2 + idx) + r);
@@ -402,23 +402,23 @@
         });
         r++;
         model.sensitivity.forEach(function (row) {
+          var sc = row.sc || {};
           put(ws, 'B' + r, row.name, '@');
-          put(ws, 'C' + r, (row.sc && row.sc.tariffPct) || 0, '0.0');
-          put(ws, 'D' + r, (row.sc && row.sc.capexPct) || 0, '0.0');
-          put(ws, 'E' + r, (row.sc && row.sc.opexPct) || 0, '0.0');
-          put(ws, 'F' + r, (row.sc && row.sc.ratebp) || 0, '0');
-          put(ws, 'G' + r, (row.sc && row.sc.capexAbsEok) || 0, '#,##0.0');
+          put(ws, 'C' + r, sc.tariffAbs != null ? sc.tariffAbs : '(기본값)', sc.tariffAbs != null ? '#,##0.0' : '@');
+          put(ws, 'D' + r, sc.capexAbs != null ? sc.capexAbs : '(기본값)', sc.capexAbs != null ? '#,##0.0' : '@');
+          put(ws, 'E' + r, sc.opexAbs != null ? sc.opexAbs : '(기본값)', sc.opexAbs != null ? '#,##0.0' : '@');
+          put(ws, 'F' + r, sc.rateAbs != null ? sc.rateAbs : '(기본값)', sc.rateAbs != null ? '0.00' : '@');
           if (row.error) {
-            ws.getCell('H' + r).value = '계산 실패: ' + row.error;
-            ws.getCell('H' + r).font = { name: FONT, size: 9, color: { argb: 'FFB4483E' } };
+            ws.getCell('G' + r).value = '계산 실패: ' + row.error;
+            ws.getCell('G' + r).font = { name: FONT, size: 9, color: { argb: 'FFB4483E' } };
           } else {
             var k = row.kpi;
-            put(ws, 'H' + r, k.dividendIRR, FMT_P);
-            put(ws, 'I' + r, k.equityIRR, FMT_P);
-            put(ws, 'J' + r, k.projectIRR, FMT_P);
-            put(ws, 'K' + r, k.minDSCRAnnual, FMT_X);
-            put(ws, 'L' + r, k.npv / 100, '#,##0');
-            put(ws, 'M' + r, k.equityMultiple, '0.00');
+            put(ws, 'G' + r, k.dividendIRR, FMT_P);
+            put(ws, 'H' + r, k.equityIRR, FMT_P);
+            put(ws, 'I' + r, k.projectIRR, FMT_P);
+            put(ws, 'J' + r, k.minDSCRAnnual, FMT_X);
+            put(ws, 'K' + r, k.npv / 100, '#,##0');
+            put(ws, 'L' + r, k.equityMultiple, '0.00');
           }
           r++;
         });

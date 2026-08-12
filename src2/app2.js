@@ -68,14 +68,13 @@
 
   var SHAREHOLDERS = [{ name: '출자자1', stakePct: 100 }];
 
-  // 민감도 분석 시나리오 — 판매단가/총투자비/운영비는 %조정, 이자율은 bp
-  // 조정(모든 트랜치 건설·운영금리에 동일하게 가산), 총사업비 변동은
-  // 억원 단위 절대 가산(%조정과 별개로 같이 적용됨). 기본 3행은 시작
-  // 템플릿일 뿐, 값은 전부 직접 편집 가능.
+  // 민감도 분석 시나리오 — 판매단가(원/kWh)/총투자비(억원)/운영비(억원)/
+  // 금리(%) 전부 델타가 아니라 절대값. 빈 칸이면 "사업 기본 가정"에 입력한
+  // 값을 그대로 쓴다. Base는 이 배열에 없고 runSensitivity()가 매번
+  // 현재 폼 값으로 새로 계산해서 결과 맨 앞에 붙인다.
   var SENS_ROWS = [
-    { name: 'Base', tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0, capexAbsEok: 0 },
-    { name: 'Upside', tariffPct: 10, capexPct: -5, opexPct: -5, ratebp: -50, capexAbsEok: 0 },
-    { name: 'Downside', tariffPct: -10, capexPct: 10, opexPct: 10, ratebp: 50, capexAbsEok: 0 }
+    { name: 'Upside', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
+    { name: 'Downside', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null }
   ];
   var lastSensResults = null;
 
@@ -276,16 +275,17 @@
       var td = document.createElement('td');
       var input = document.createElement('input');
       input.type = isText ? 'text' : 'number'; input.step = 'any';
-      input.value = val; input.dataset.sensIdx = idx; input.dataset.sensF = f;
+      input.value = val === null || val === undefined ? '' : val;
+      input.placeholder = '위 입력값 사용';
+      input.dataset.sensIdx = idx; input.dataset.sensF = f;
       td.appendChild(input);
       return td;
     }
     tr.appendChild(cell(sc.name, 'name', true));
-    tr.appendChild(cell(sc.tariffPct, 'tariffPct'));
-    tr.appendChild(cell(sc.capexPct, 'capexPct'));
-    tr.appendChild(cell(sc.opexPct, 'opexPct'));
-    tr.appendChild(cell(sc.ratebp, 'ratebp'));
-    tr.appendChild(cell(sc.capexAbsEok, 'capexAbsEok'));
+    tr.appendChild(cell(sc.tariffAbs, 'tariffAbs'));
+    tr.appendChild(cell(sc.capexAbs, 'capexAbs'));
+    tr.appendChild(cell(sc.opexAbs, 'opexAbs'));
+    tr.appendChild(cell(sc.rateAbs, 'rateAbs'));
     var rmTd = document.createElement('td');
     var rm = document.createElement('button');
     rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
@@ -303,51 +303,53 @@
     var box = $('#sensBox');
     box.innerHTML = '';
     var t = el('table', 'tr');
-    t.innerHTML = '<thead><tr><th>시나리오</th><th>판매단가(%)</th><th>총투자비(%)</th><th>운영비(%)</th><th>이자율(bp)</th><th>총사업비 변동(억원)</th><th></th></tr></thead>';
+    t.innerHTML = '<thead><tr><th>시나리오</th><th>판매단가(원/kWh)</th><th>총투자비(억원)</th><th>운영비(억원)</th><th>금리(%)</th><th></th></tr></thead>';
     var tb = document.createElement('tbody');
     SENS_ROWS.forEach(function (sc, idx) { tb.appendChild(sensRow(sc, idx)); });
     t.appendChild(tb);
     box.appendChild(t);
   }
 
+  // 빈 칸은 "위 사업 기본가정 값을 그대로 쓴다"는 뜻이라 null로 남긴다
+  // (Number('')=0으로 바뀌면 "0으로 강제 지정"과 구분이 안 되므로).
   function readSensRows() {
     var trs = Array.prototype.slice.call(document.querySelectorAll('#sensBox tbody tr'));
     return trs.map(function (tr) {
       var o = {};
       Array.prototype.slice.call(tr.querySelectorAll('input')).forEach(function (input) {
-        o[input.dataset.sensF] = input.dataset.sensF === 'name' ? input.value : Number(input.value);
+        var f = input.dataset.sensF;
+        if (f === 'name') { o[f] = input.value; return; }
+        o[f] = input.value === '' ? null : Number(input.value);
       });
       return o;
     });
   }
 
-  // 판매단가/총투자비/운영비는 배율(%), 이자율은 %p(bp/100)를 기본 입력에
-  // 더해 새 입력 객체를 만든다 — 트랜치 개별 rateC/rateO를 모두 같은
-  // bp만큼 평행이동, tariffTracks/opexItems가 있으면 그 항목들도 같이 조정.
-  // 총사업비 변동(억원)은 %조정과 별개로 절대금액을 더/뺀다(둘 다 채우면
-  // 둘 다 같이 적용됨 — 순서는 %조정 먼저, 그다음 절대금액 가산).
+  // 시나리오 값은 델타(증감)가 아니라 절대값이다 — 빈 칸이면 위 "사업 기본
+  // 가정"에 입력한 값을 그대로 쓰고, 채워져 있으면 그 값으로 완전히
+  // 대체한다. 판매단가·운영비는 tariffTracks/opexItems가 있을 때 그
+  // 항목들도 같은 비율로 같이 조정, 금리는 모든 트랜치의 건설·운영금리를
+  // 동일하게 덮어쓴다.
   function applyScenario(baseInp, sc) {
     var c = JSON.parse(JSON.stringify(baseInp));
-    var tf = 1 + (sc.tariffPct || 0) / 100;
-    var cf = 1 + (sc.capexPct || 0) / 100;
-    var of = 1 + (sc.opexPct || 0) / 100;
-    var rb = (sc.ratebp || 0) / 100;
-    if (c.tariff != null) c.tariff = c.tariff * tf;
-    if (c.tariffTracks) c.tariffTracks.forEach(function (t) { t.price = t.price * tf; });
-    if (c.capexEok != null) c.capexEok = c.capexEok * cf + (sc.capexAbsEok || 0);
-    if (c.opexEok != null) c.opexEok = c.opexEok * of;
-    if (c.opexItems) c.opexItems.forEach(function (it) { it.annualKRWm = it.annualKRWm * of; });
-    if (c.tranches) c.tranches.forEach(function (t) {
-      t.rateC = (t.rateC || 0) + rb; t.rateO = (t.rateO || 0) + rb;
-    });
+    if (sc.tariffAbs != null) {
+      var tRatio = c.tariff > 0 ? sc.tariffAbs / c.tariff : 1;
+      if (c.tariffTracks) c.tariffTracks.forEach(function (t) { t.price = t.price * tRatio; });
+      c.tariff = sc.tariffAbs;
+    }
+    if (sc.capexAbs != null) c.capexEok = sc.capexAbs;
+    if (sc.opexAbs != null) {
+      var oRatio = c.opexEok > 0 ? sc.opexAbs / c.opexEok : 1;
+      if (c.opexItems) c.opexItems.forEach(function (it) { it.annualKRWm = it.annualKRWm * oRatio; });
+      c.opexEok = sc.opexAbs;
+    }
+    if (sc.rateAbs != null && c.tranches) {
+      c.tranches.forEach(function (t) { t.rateC = sc.rateAbs; t.rateO = sc.rateAbs; });
+    }
     return c;
   }
 
-  function runSensitivity() {
-    if (usingPreset) {
-      toast('민감도 분석은 "당진 FS 불러오기" 프리셋 상태에서는 의미가 없습니다(실측치로 고정됨) — 아무 값이나 수정해 프리셋을 해제한 뒤 사용하세요');
-      return;
-    }
+  function buildBaseInp() {
     var core = readCore();
     var tranches = readTranches();
     var spendCurve = readSpendCurve();
@@ -365,19 +367,35 @@
       ];
     }
     baseInp.shareholders = readShareholders();
+    return baseInp;
+  }
+
+  function runSensitivity() {
+    if (usingPreset) {
+      toast('민감도 분석은 "당진 FS 불러오기" 프리셋 상태에서는 의미가 없습니다(실측치로 고정됨) — 아무 값이나 수정해 프리셋을 해제한 뒤 사용하세요');
+      return;
+    }
+    var baseInp = buildBaseInp();
+
+    // Base는 별도 입력행이 아니라 위 "사업 기본 가정"을 그대로(수정 없이)
+    // 돌린 결과를 매번 새로 계산해서 맨 앞에 붙인다 — 값을 따로
+    // 관리/입력할 필요 없이 항상 현재 폼과 일치한다.
+    var baseRow = { name: 'Base(현재 입력값)', sc: {}, isBase: true };
+    try { baseRow.kpi = M.computeModel(baseInp).kpi; }
+    catch (e) { baseRow.error = e.message; }
 
     SENS_ROWS = readSensRows();
-    var results = SENS_ROWS.map(function (sc) {
+    var results = [baseRow].concat(SENS_ROWS.map(function (sc) {
       try {
         var m = M.computeModel(applyScenario(baseInp, sc));
         return { name: sc.name, sc: sc, kpi: m.kpi };
       } catch (e) {
         return { name: sc.name, sc: sc, error: e.message };
       }
-    });
+    }));
     lastSensResults = results;
     renderSensResults(results);
-    toast('민감도 분석 완료 — ' + results.length + '개 시나리오');
+    toast('민감도 분석 완료 — ' + results.length + '개 시나리오(Base 포함)');
   }
 
   function renderSensResults(results) {
@@ -792,7 +810,7 @@
   $('#shbox').addEventListener('input', updateShareholderSum);
   buildSensGrid();
   $('#sensAdd').addEventListener('click', function () {
-    SENS_ROWS.push({ name: '시나리오' + (SENS_ROWS.length + 1), tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0, capexAbsEok: 0 });
+    SENS_ROWS.push({ name: '시나리오' + (SENS_ROWS.length + 1), tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null });
     buildSensGrid();
   });
   $('#sensRun').addEventListener('click', runSensitivity);
