@@ -379,6 +379,52 @@
     })();
 
     /* =========================================================
+       7-1. 민감도 — 화면에서 실행한 시나리오 비교 결과(있을 때만)
+       ========================================================= */
+    if (model.sensitivity && model.sensitivity.length) {
+      (function () {
+        var ws = wb.addWorksheet('민감도', { properties: { tabColor: { argb: 'FF14483A' } } });
+        ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 16;
+        for (var ci = 0; ci < 9; ci++) ws.getColumn(3 + ci).width = 14;
+        title(ws, '민감도 분석 — 시나리오별 핵심 지표 비교');
+        var r = 4;
+        ws.getCell('B' + r).value = '판매단가/총투자비/운영비는 %조정, 이자율은 bp(1/100%) 조정. 화면(생성기)에서 지정한 시나리오를 각각 독립적으로 재계산한 값 — 라이브 수식이 아니라 스냅샷임.';
+        ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FF6B7B76' } };
+        r += 2;
+        var heads = ['시나리오', '판매단가Δ[%]', '총투자비Δ[%]', '운영비Δ[%]', '이자율Δ[bp]',
+          'Equity IRR(배당)', 'Equity IRR(FCFE)', 'Project IRR', '최소DSCR', 'NPV[억원]', '투자배수[x]'];
+        heads.forEach(function (h, idx) {
+          var c = ws.getCell(colLetter(2 + idx) + r);
+          c.value = h;
+          c.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+          c.alignment = { horizontal: 'center' };
+        });
+        r++;
+        model.sensitivity.forEach(function (row) {
+          put(ws, 'B' + r, row.name, '@');
+          put(ws, 'C' + r, (row.sc && row.sc.tariffPct) || 0, '0.0');
+          put(ws, 'D' + r, (row.sc && row.sc.capexPct) || 0, '0.0');
+          put(ws, 'E' + r, (row.sc && row.sc.opexPct) || 0, '0.0');
+          put(ws, 'F' + r, (row.sc && row.sc.ratebp) || 0, '0');
+          if (row.error) {
+            ws.getCell('G' + r).value = '계산 실패: ' + row.error;
+            ws.getCell('G' + r).font = { name: FONT, size: 9, color: { argb: 'FFB4483E' } };
+          } else {
+            var k = row.kpi;
+            put(ws, 'G' + r, k.dividendIRR, FMT_P);
+            put(ws, 'H' + r, k.equityIRR, FMT_P);
+            put(ws, 'I' + r, k.projectIRR, FMT_P);
+            put(ws, 'J' + r, k.minDSCRAnnual, FMT_X);
+            put(ws, 'K' + r, k.npv / 100, '#,##0');
+            put(ws, 'L' + r, k.equityMultiple, '0.00');
+          }
+          r++;
+        });
+      })();
+    }
+
+    /* =========================================================
        8. 목차
        ========================================================= */
     (function () {
@@ -396,7 +442,7 @@
         ['Opex', '운영비 (선순위/후순위)'],
         ['IS(Q)', '분기 손익계산서'],
         ['CF(Q)', '분기 현금흐름 · DSCR · 배당']
-      ];
+      ].concat(model.sensitivity && model.sensitivity.length ? [['민감도', '시나리오별 핵심 지표 비교']] : []);
       var r = 6;
       ['시트', '내용'].forEach(function (h, idx) {
         var c = ws.getCell(colLetter(2 + idx) + r);
@@ -419,7 +465,8 @@
 
     var order = ['목차', 'Report', 'Funding'].concat(
       model.tranches.map(function (t) { return 'Debt_' + t.name.replace(/\s/g, ''); }),
-      ['Debt_합계', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)']
+      ['Debt_합계', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'],
+      model.sensitivity && model.sensitivity.length ? ['민감도'] : []
     );
     order.forEach(function (n, idx) {
       var w = wb.getWorksheet(n);

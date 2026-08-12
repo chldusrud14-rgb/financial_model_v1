@@ -65,6 +65,16 @@
 
   var SHAREHOLDERS = [{ name: '출자자1', stakePct: 100 }];
 
+  // 민감도 분석 시나리오 — 판매단가/총투자비/운영비는 %조정, 이자율은 bp
+  // 조정(모든 트랜치 건설·운영금리에 동일하게 가산). 기본 3행은 시작
+  // 템플릿일 뿐, 값은 전부 직접 편집 가능.
+  var SENS_ROWS = [
+    { name: 'Base', tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0 },
+    { name: 'Upside', tariffPct: 10, capexPct: -5, opexPct: -5, ratebp: -50 },
+    { name: 'Downside', tariffPct: -10, capexPct: 10, opexPct: 10, ratebp: 50 }
+  ];
+  var lastSensResults = null;
+
   var TRANCHES = [
     { key: 'A', name: '선순위A', amountEok: 500, order: 2, rateO: 5.6, graceYears: 2, repayYears: 16 },
     { key: 'B', name: '선순위B', amountEok: 500, order: 2, rateO: 5.5, graceYears: 2, repayYears: 16 },
@@ -209,6 +219,145 @@
     var ok = Math.abs(sum - 100) < 0.01;
     box.className = 'spendsum ' + (ok ? 'ok' : 'bad');
     box.innerHTML = '<span>지분율 합계: ' + sum.toFixed(2) + '%</span><span>' + (ok ? '100% — 일치' : '100%와 차이 ' + (sum - 100).toFixed(2) + '%p') + '</span>';
+  }
+
+  /* ---------- 민감도 분석 ----------
+     화면 입력(일반 경로) 기준으로 판매단가/총투자비/운영비/이자율을
+     시나리오별로 조정해 여러 번 재계산한다. 프리셋(당진 FS)은 실측
+     분기 데이터(periodOverrides)로 결과가 고정돼 있어 이 조정들이
+     반영되지 않으므로 의도적으로 막는다. */
+  function sensRow(sc, idx) {
+    var tr = document.createElement('tr');
+    function cell(val, f, isText) {
+      var td = document.createElement('td');
+      var input = document.createElement('input');
+      input.type = isText ? 'text' : 'number'; input.step = 'any';
+      input.value = val; input.dataset.sensIdx = idx; input.dataset.sensF = f;
+      td.appendChild(input);
+      return td;
+    }
+    tr.appendChild(cell(sc.name, 'name', true));
+    tr.appendChild(cell(sc.tariffPct, 'tariffPct'));
+    tr.appendChild(cell(sc.capexPct, 'capexPct'));
+    tr.appendChild(cell(sc.opexPct, 'opexPct'));
+    tr.appendChild(cell(sc.ratebp, 'ratebp'));
+    var rmTd = document.createElement('td');
+    var rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
+    rm.addEventListener('click', function () {
+      if (SENS_ROWS.length <= 1) return;
+      SENS_ROWS.splice(idx, 1);
+      buildSensGrid();
+    });
+    rmTd.appendChild(rm);
+    tr.appendChild(rmTd);
+    return tr;
+  }
+
+  function buildSensGrid() {
+    var box = $('#sensBox');
+    box.innerHTML = '';
+    var t = el('table', 'tr');
+    t.innerHTML = '<thead><tr><th>시나리오</th><th>판매단가(%)</th><th>총투자비(%)</th><th>운영비(%)</th><th>이자율(bp)</th><th></th></tr></thead>';
+    var tb = document.createElement('tbody');
+    SENS_ROWS.forEach(function (sc, idx) { tb.appendChild(sensRow(sc, idx)); });
+    t.appendChild(tb);
+    box.appendChild(t);
+  }
+
+  function readSensRows() {
+    var trs = Array.prototype.slice.call(document.querySelectorAll('#sensBox tbody tr'));
+    return trs.map(function (tr) {
+      var o = {};
+      Array.prototype.slice.call(tr.querySelectorAll('input')).forEach(function (input) {
+        o[input.dataset.sensF] = input.dataset.sensF === 'name' ? input.value : Number(input.value);
+      });
+      return o;
+    });
+  }
+
+  // 판매단가/총투자비/운영비는 배율(%), 이자율은 %p(bp/100)를 기본 입력에
+  // 더해 새 입력 객체를 만든다 — 트랜치 개별 rateC/rateO를 모두 같은
+  // bp만큼 평행이동, tariffTracks/opexItems가 있으면 그 항목들도 같이 조정.
+  function applyScenario(baseInp, sc) {
+    var c = JSON.parse(JSON.stringify(baseInp));
+    var tf = 1 + (sc.tariffPct || 0) / 100;
+    var cf = 1 + (sc.capexPct || 0) / 100;
+    var of = 1 + (sc.opexPct || 0) / 100;
+    var rb = (sc.ratebp || 0) / 100;
+    if (c.tariff != null) c.tariff = c.tariff * tf;
+    if (c.tariffTracks) c.tariffTracks.forEach(function (t) { t.price = t.price * tf; });
+    if (c.capexEok != null) c.capexEok = c.capexEok * cf;
+    if (c.opexEok != null) c.opexEok = c.opexEok * of;
+    if (c.opexItems) c.opexItems.forEach(function (it) { it.annualKRWm = it.annualKRWm * of; });
+    if (c.tranches) c.tranches.forEach(function (t) {
+      t.rateC = (t.rateC || 0) + rb; t.rateO = (t.rateO || 0) + rb;
+    });
+    return c;
+  }
+
+  function runSensitivity() {
+    if (usingPreset) {
+      toast('민감도 분석은 "당진 FS 불러오기" 프리셋 상태에서는 의미가 없습니다(실측치로 고정됨) — 아무 값이나 수정해 프리셋을 해제한 뒤 사용하세요');
+      return;
+    }
+    var core = readCore();
+    var tranches = readTranches();
+    var spendCurve = readSpendCurve();
+    var baseInp = Object.assign({}, core, {
+      ppy: 4, capacityFactor: undefined, spendCurve: spendCurve, equityOrder: 1,
+      tranches: tranches.map(function (t) {
+        return { name: t.name, amountEok: t.amountEok, order: t.order, rateC: t.rateC, rateO: t.rateO, graceYears: t.graceYears, repayYears: t.repayYears, method: t.method };
+      }),
+      taxMode: 1, localSurtaxRate: 10
+    });
+    if (baseInp.rpsShare > 0) {
+      baseInp.tariffTracks = [
+        { share: baseInp.rpsShare / 100, price: baseInp.smpPrice + baseInp.recWeight * baseInp.recPrice, escal: baseInp.tariffEscal },
+        { share: 1 - baseInp.rpsShare / 100, price: baseInp.tariff, escal: baseInp.tariffEscal }
+      ];
+    }
+    baseInp.shareholders = readShareholders();
+
+    SENS_ROWS = readSensRows();
+    var results = SENS_ROWS.map(function (sc) {
+      try {
+        var m = M.computeModel(applyScenario(baseInp, sc));
+        return { name: sc.name, sc: sc, kpi: m.kpi };
+      } catch (e) {
+        return { name: sc.name, sc: sc, error: e.message };
+      }
+    });
+    lastSensResults = results;
+    renderSensResults(results);
+    toast('민감도 분석 완료 — ' + results.length + '개 시나리오');
+  }
+
+  function renderSensResults(results) {
+    var box = $('#sensResults');
+    box.innerHTML = '';
+    var t = el('table', 'tr');
+    t.innerHTML = '<thead><tr><th>시나리오</th><th>Equity IRR(배당)</th><th>Equity IRR(FCFE)</th>' +
+      '<th>Project IRR</th><th>최소DSCR</th><th>NPV(억원)</th><th>투자배수</th></tr></thead>';
+    var tb = document.createElement('tbody');
+    results.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.error) {
+        tr.innerHTML = '<td>' + r.name + '</td><td colspan="6" style="color:var(--bad)">계산 실패: ' + r.error + '</td>';
+      } else {
+        var k = r.kpi;
+        tr.innerHTML = '<td>' + r.name + '</td>' +
+          '<td style="text-align:right">' + pct(k.dividendIRR) + '%</td>' +
+          '<td style="text-align:right">' + pct(k.equityIRR) + '%</td>' +
+          '<td style="text-align:right">' + pct(k.projectIRR) + '%</td>' +
+          '<td style="text-align:right">' + (k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3)) + 'x</td>' +
+          '<td style="text-align:right">' + feok(k.npv) + '</td>' +
+          '<td style="text-align:right">' + fx(k.equityMultiple) + '배</td>';
+      }
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    box.appendChild(t);
   }
 
   function buildSpendCurve() {
@@ -487,6 +636,10 @@
   }
 
   function run() {
+    // 새로 생성하면 이전 민감도 결과는 다른 기준값에서 나온 것이라 무효 —
+    // 엑셀에 잘못 딸려가지 않게 비운다(다시 보려면 민감도를 재실행).
+    lastSensResults = null;
+    var sr = $('#sensResults'); if (sr) sr.innerHTML = '';
     var inp;
     if (usingPreset && presetInp) {
       inp = presetInp;
@@ -537,6 +690,7 @@
 
   function download() {
     if (!model) return;
+    if (lastSensResults) model.sensitivity = lastSensResults;
     var btn = $('#xls'); btn.disabled = true; btn.textContent = '생성 중…';
     X.buildWorkbook(model, window.ExcelJS).xlsx.writeBuffer().then(function (buf) {
       var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -568,6 +722,12 @@
     buildShareholderGrid();
   });
   $('#shbox').addEventListener('input', updateShareholderSum);
+  buildSensGrid();
+  $('#sensAdd').addEventListener('click', function () {
+    SENS_ROWS.push({ name: '시나리오' + (SENS_ROWS.length + 1), tariffPct: 0, capexPct: 0, opexPct: 0, ratebp: 0 });
+    buildSensGrid();
+  });
+  $('#sensRun').addEventListener('click', runSensitivity);
   $('#run').addEventListener('click', run);
   $('#xls').addEventListener('click', download);
   $('#loadDangjin').addEventListener('click', loadDangjin);
