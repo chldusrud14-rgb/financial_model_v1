@@ -644,16 +644,19 @@
       '<div class="hsub">실제 배당 수령 기준 — 가장 보수적/현실적인 수익률 · 투자배수 ' + fx(k.equityMultiple) + '배 · 회수기간 ' + fyr(k.paybackYears) + (k.paybackYears === null ? '' : '년') + '</div>';
     box.appendChild(hero);
 
+    // 세전은 세후보다 덜 중요한 참고값이라 왼쪽에 두고 톤을 흐리게(dim),
+    // 세후는 오른쪽에 두고 원래 톤 그대로 — 같은 지표를 나란히 비교하기 쉽게.
     box.appendChild(kpiGroup('수익성 상세', [
+      ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%', '', (kpiTone(k.equityIRRPre, 'neg') + ' dim').trim()],
       ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '', kpiTone(k.equityIRR, 'neg')],
-      ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%', '', kpiTone(k.equityIRRPre, 'neg')],
-      ['Project IRR 세후', pct(k.projectIRR), '%', '', kpiTone(k.projectIRR, 'neg')],
-      ['Project IRR 세전', pct(k.projectIRRPre), '%', '', kpiTone(k.projectIRRPre, 'neg')]
+      ['Project IRR 세전', pct(k.projectIRRPre), '%', '', (kpiTone(k.projectIRRPre, 'neg') + ' dim').trim()],
+      ['Project IRR 세후', pct(k.projectIRR), '%', '', kpiTone(k.projectIRR, 'neg')]
     ]));
     box.appendChild(kpiGroup('사업 규모·수익구조', [
       ['연평균 EBITDA', f0(k.avgEbitda), 'KRWm/yr', '', kpiTone(k.avgEbitda, 'neg')],
       ['EBITDA 마진', k.ebitdaMargin === null ? '—' : (k.ebitdaMargin * 100).toFixed(1), '%'],
       ['NPV(프로젝트)', feok(k.npv), '억원', '', kpiTone(k.npv, 'neg')],
+      ['LCOE(균등화발전단가)', k.lcoe ? k.lcoe.toFixed(1) : '—', '원/kWh', '판매단가와 같은 단위 — LCOE보다 판매단가가 높아야 수익이 남'],
       ['MW당 총투자비(TIC)', capexPerMW === null ? '—' : capexPerMW.toFixed(2), '억원/MW', '건설이자(IDC) 포함 총투자비 기준 — 위에 입력한 "총사업비"(건설이자 제외)와는 다른 값입니다'],
       ['MW당 연평균 운영비', opexPerMWyr === null ? '—' : f0(opexPerMWyr), 'KRWm/MW/yr']
     ]));
