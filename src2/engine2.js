@@ -50,6 +50,22 @@
   }
   function annualize(rPeriod, ppy) { return Math.pow(1 + rPeriod, ppy) - 1; }
 
+  // 자본회수기간(payback): 누적현금흐름이 처음으로 음수→양수로 넘어가는
+  // 분기를 찾아 그 구간 안에서 선형보간한다(연 단위로 환산). 모델 기간
+  // 안에 회수가 안 되면 null.
+  function paybackYears(flows, ppy) {
+    var cum = 0;
+    for (var i = 0; i < flows.length; i++) {
+      var prev = cum;
+      cum += flows[i];
+      if (prev < 0 && cum >= 0) {
+        var frac = flows[i] !== 0 ? (-prev) / flows[i] : 0;
+        return (i + frac) / ppy;
+      }
+    }
+    return null;
+  }
+
   /* ---------- 법인세 (누진) ---------- */
   function corpTax(base) {
     if (base <= 0) return 0;
@@ -521,6 +537,11 @@
         // 되돌리고 실제 납부액으로 바꿔치기.
         var taxAdj = ovrD && ovrD.taxCash != null ? (r.tax - ovrD.taxCash) : 0;
         r.fcfe = r.cfads - r.ds - dsraForFcfe - p.opexSub - r.decom + taxAdj;
+        // 세전 FCFE(Equity IRR 세전용): FCFE 계산에서 실제로 빠진 세금
+        // (현금기준 taxCash가 있으면 그 값, 없으면 발생주의 r.tax)만큼을
+        // 되돌려 더한 값 — "법인세를 안 냈다면"의 비교 기준선.
+        r.taxEffective = r.tax - taxAdj;
+        r.fcfePre = r.fcfe + r.taxEffective;
         r.cashOpen = cashBal;
         var avail = cashBal + r.fcfe;
         if (p.isOp) distributable += r.ni;
@@ -628,7 +649,7 @@
     var rows = out.rows;
 
     /* ---- 지표 ---- */
-    var projFlows = [], eqFlows = [], divFlows = [], preFlows = [], investorFlows = [];
+    var projFlows = [], eqFlows = [], eqFlowsPre = [], divFlows = [], preFlows = [], investorFlows = [];
     // 건설기간 유출
     ps.forEach(function (p, i) {
       var capOut = 0;
@@ -636,6 +657,7 @@
       projFlows.push(rows[i].projectFcf - capOut);
       preFlows.push(ps[i].ebitda - rows[i].decom - rows[i].agentFee + rows[i].wc - capOut);
       eqFlows.push(rows[i].fcfe - con.draws[0][i]);
+      eqFlowsPre.push(rows[i].fcfePre - con.draws[0][i]);
       divFlows.push(rows[i].dividend - con.draws[0][i]);
 
       // Investor IRR: 자본+부채 조달 전체(유출) vs 건설이자·원리금·배당
@@ -654,6 +676,8 @@
 
     var pIRRp = irr(projFlows), eIRRp = irr(eqFlows), dIRRp = irr(divFlows), preIRRp = irr(preFlows);
     var invIRRp = irr(investorFlows);
+    var eIRRPreP = irr(eqFlowsPre);
+    var paybackYr = paybackYears(divFlows, ppy);
     var dscrs = rows.filter(function (r) { return r.dscr !== null && r.ds > 1e-9; }).map(function (r) { return r.dscr; });
     // DSCR은 원본 Report 시트 기준 연 단위 지표다(분기 롤링이 아님).
     // 단순DSCR = 그 해 CFADS합/DS합.
@@ -701,6 +725,10 @@
       };
     });
 
+    var totalRevenueKRWm = rows.reduce(function (a, r) { return a + r.revenue; }, 0);
+    var totalOpexKRWm = rows.reduce(function (a, r) { return a + r.opex; }, 0);
+    var totalEbitdaKRWm = rows.reduce(function (a, r) { return a + (r.ebitda || 0); }, 0);
+
     return {
       inp: inp, periods: ps, rows: rows, tranches: trs, con: con,
       idc: idc, tic: tic, equity: equity,
@@ -709,16 +737,22 @@
         projectIRR: annualize(pIRRp, ppy),
         projectIRRPre: annualize(preIRRp, ppy),
         equityIRR: annualize(eIRRp, ppy),
+        equityIRRPre: annualize(eIRRPreP, ppy),
         dividendIRR: annualize(dIRRp, ppy),
         investorIRR: annualize(invIRRp, ppy),
         npv: npv(dr, projFlows),
+        paybackYears: paybackYr,
+        equityMultiple: equity > 0 ? totalDividendKRWm / equity : null,
+        avgEbitda: totalEbitdaKRWm / inp.operationYears,
+        ebitdaMargin: totalRevenueKRWm > 0 ? totalEbitdaKRWm / totalRevenueKRWm : null,
         minDSCR: dscrs.length ? Math.min.apply(null, dscrs) : null,
         avgDSCR: dscrs.length ? dscrs.reduce(function (a, b) { return a + b; }, 0) / dscrs.length : null,
         minCumDSCR: annualCumDscrs.length ? Math.min.apply(null, annualCumDscrs) : null,
         minDSCRAnnual: annualDscrs.length ? Math.min.apply(null, annualDscrs) : null,
         totalDividend: totalDividendKRWm,
-        totalRevenue: rows.reduce(function (a, r) { return a + r.revenue; }, 0),
-        totalOpex: rows.reduce(function (a, r) { return a + r.opex; }, 0),
+        totalRevenue: totalRevenueKRWm,
+        totalOpex: totalOpexKRWm,
+        totalEbitda: totalEbitdaKRWm,
         totalInterest: rows.reduce(function (a, r) { return a + r.interest; }, 0),
         totalTax: rows.reduce(function (a, r) { return a + r.tax; }, 0),
         lcoe: pvGen > 0 ? pvOpex / pvGen * 1000 : 0,

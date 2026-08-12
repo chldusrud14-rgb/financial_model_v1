@@ -395,29 +395,57 @@
   var model = null;
   var f0 = function (n) { return Math.round(n).toLocaleString('ko-KR'); };
   var pct = function (n) { return n === null || n === undefined || isNaN(n) ? '—' : (n * 100).toFixed(2); };
+  var fx = function (n) { return n === null || n === undefined || isNaN(n) ? '—' : n.toFixed(2); };
+  var fyr = function (n) { return n === null || n === undefined || isNaN(n) ? '회수 안 됨' : n.toFixed(1); };
+  var feok = function (n) { return Math.round(n / 100).toLocaleString('ko-KR'); }; // KRWm → 억원
 
-  function renderKPIs() {
-    var k = model.kpi;
-    var items = [
-      ['Project IRR (세후)', pct(k.projectIRR), '%'],
-      ['Equity IRR (FCFE)', pct(k.equityIRR), '%'],
-      ['Equity IRR (배당)', pct(k.dividendIRR), '%'],
-      ['Investor IRR', pct(k.investorIRR), '%'],
-      ['최소 단순DSCR(연 합산)', k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3), 'x'],
-      ['최소 누적DSCR', k.minCumDSCR === null ? '—' : k.minCumDSCR.toFixed(3), 'x'],
-      ['총 배당(연차+청산)', f0(k.totalDividend), '억원 기준 아님(KRWm)'],
-      ['총투자비(TIC)', f0(model.tic), 'KRWm']
-    ];
-    var box = $('#kpis'); box.innerHTML = '';
+  function kpiGroup(title, items) {
+    var wrap = el('div', 'grp');
+    wrap.appendChild(el('b', null, title));
+    var grid = el('div', 'kpis');
     items.forEach(function (it) {
       var d = el('div', 'kpi');
       d.appendChild(el('div', 'k', it[0]));
       d.appendChild(el('div', 'v', it[1] + '<em>' + it[2] + '</em>'));
-      box.appendChild(d);
+      if (it[3]) d.appendChild(el('div', 'n2', it[3]));
+      grid.appendChild(d);
     });
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  function renderKPIs() {
+    var k = model.kpi;
+    var capMW = model.inp.capacityMW;
+    var capexPerMW = capMW > 0 ? model.tic / 100 / capMW : null;         // 억원/MW
+    var opexPerMWyr = capMW > 0 ? (k.totalOpex / model.inp.operationYears) / capMW : null; // KRWm/MW/yr
+
+    var box = $('#kpis'); box.innerHTML = '';
+    box.appendChild(kpiGroup('수익성', [
+      ['Equity IRR (배당)', pct(k.dividendIRR), '%', '실제 배당 수령 기준 — 가장 보수적/현실적인 수익률'],
+      ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%'],
+      ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%'],
+      ['Project IRR 세후', pct(k.projectIRR), '%'],
+      ['Project IRR 세전', pct(k.projectIRRPre), '%'],
+      ['Investor IRR', pct(k.investorIRR), '%', '자본+부채 조달 전체(유출) 대비 이자·원금·배당 전체(유입) — 전체 자본구조(대출+출자) 관점의 종합 수익률'],
+      ['투자배수(Equity Multiple)', fx(k.equityMultiple), '배', '총배당 ÷ 자본금 — 원금의 몇 배로 돌아오는지'],
+      ['자본회수기간', fyr(k.paybackYears), k.paybackYears === null ? '' : '년', '누적 배당이 자본금을 회수하는 시점']
+    ]));
+    box.appendChild(kpiGroup('사업 규모·수익구조', [
+      ['연평균 EBITDA', f0(k.avgEbitda), 'KRWm/yr'],
+      ['EBITDA 마진', k.ebitdaMargin === null ? '—' : (k.ebitdaMargin * 100).toFixed(1), '%'],
+      ['NPV(프로젝트)', feok(k.npv), '억원'],
+      ['MW당 총투자비', capexPerMW === null ? '—' : capexPerMW.toFixed(2), '억원/MW'],
+      ['MW당 연평균 운영비', opexPerMWyr === null ? '—' : f0(opexPerMWyr), 'KRWm/MW/yr']
+    ]));
+    box.appendChild(kpiGroup('리스크', [
+      ['최소 DSCR(연 합산)', k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3), 'x', '연도별 CFADS합/원리금합 중 최솟값 — 1.0 미만이면 그 해 상환재원이 부족했다는 뜻']
+    ]));
+
     $('#metaNote').textContent = '기간 수(분기): ' + model.periods.length +
       ' · 마지막 분기: ' + model.periods[model.periods.length - 1].endStr +
-      ' · 총영업수익 ' + f0(k.totalRevenue) + 'KRWm · 총선순위이자 ' + f0(k.totalInterest) + 'KRWm';
+      ' · 총영업수익 ' + f0(k.totalRevenue) + 'KRWm · 총선순위이자 ' + f0(k.totalInterest) + 'KRWm' +
+      ' · 총투자비(TIC) ' + f0(model.tic) + 'KRWm';
 
     var shBox = $('#shResults');
     shBox.innerHTML = '';

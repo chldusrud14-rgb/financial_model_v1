@@ -12,14 +12,14 @@ function fireClick(d, sel) { d.querySelector(sel).dispatchEvent(new w.Event('cli
 setTimeout(() => {
   const d = w.document;
   console.log('=== 기본 폼(당진 프리셋 로드 전) ===');
-  console.log('입력 필드(core):', d.querySelectorAll('[data-k]').length, '(기대 26)');
+  console.log('입력 필드(core):', d.querySelectorAll('[data-k]').length, '(기대 30)');
   console.log('공사비 지출곡선 입력:', d.querySelectorAll('[data-spend]').length);
 
   fireClick(d, '#run');
   setTimeout(() => {
     const genericKpis = {};
     d.querySelectorAll('#kpis .kpi').forEach(k => { genericKpis[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
-    console.log('기본값 생성 결과(범용 근사, 원본과 다름):', genericKpis['Equity IRR (배당)'], genericKpis['최소 단순DSCR(연 합산)']);
+    console.log('기본값 생성 결과(범용 근사, 원본과 다름):', genericKpis['Equity IRR (배당)'], genericKpis['최소 DSCR(연 합산)']);
 
     console.log('\n=== 당진 FS 불러오기 클릭 ===');
     fireClick(d, '#loadDangjin');
@@ -34,8 +34,8 @@ setTimeout(() => {
         const kpis = {};
         d.querySelectorAll('#kpis .kpi').forEach(k => { kpis[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
         const expect = {
-          'Project IRR (세후)': '7.86', 'Equity IRR (FCFE)': '13.33', 'Equity IRR (배당)': '12.12',
-          'Investor IRR': '7.29', '최소 단순DSCR(연 합산)': '1.218', '최소 누적DSCR': '1.449'
+          'Project IRR 세후': '7.86', 'Equity IRR (FCFE) 세후': '13.33', 'Equity IRR (배당)': '12.12',
+          'Investor IRR': '7.29', '최소 DSCR(연 합산)': '1.218'
         };
         let allOk = true;
         Object.keys(expect).forEach(k => {
