@@ -292,8 +292,8 @@
     var pullTd = document.createElement('td');
     if (sc.name === 'Base') {
       var pull = document.createElement('button');
-      pull.type = 'button'; pull.className = 'rm'; pull.title = '위 "사업 기본 가정" 입력값을 그대로 가져와 채우기';
-      pull.textContent = '↑';
+      pull.type = 'button'; pull.className = 'pull'; pull.title = '위 "사업 기본 가정" 입력값을 그대로 가져와 채우기';
+      pull.textContent = '가져오기';
       pull.addEventListener('click', function () { pullFromForm(idx); });
       pullTd.appendChild(pull);
     }
