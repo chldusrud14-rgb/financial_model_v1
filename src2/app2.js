@@ -33,6 +33,14 @@
     { k: 'depYears', label: '감가상각 내용연수', type: 'number', def: 20, unit: 'Year', group: '재원조달·감가상각' },
 
     { k: 'tariffEscal', label: '판매단가 상승률', type: 'number', def: 0, unit: '%/yr', group: '매출' },
+    { k: 'rpsShare', label: 'RPS(SMP+REC) 비중', type: 'number', def: 0, unit: '%', group: '매출',
+      hint: '설비용량 중 SMP+REC(RPS)로 정산받는 비중. 나머지는 PPA(위 "판매단가")로 계산됩니다. 0이면 기존과 동일하게 전량 PPA로 계산됩니다.' },
+    { k: 'smpPrice', label: 'SMP 단가', type: 'number', def: 135, unit: '원/kWh', group: '매출',
+      hint: 'RPS 비중이 0보다 클 때만 사용됩니다.' },
+    { k: 'recPrice', label: 'REC 단가', type: 'number', def: 70, unit: '원/kWh', group: '매출',
+      hint: 'RPS 비중이 0보다 클 때만 사용됩니다.' },
+    { k: 'recWeight', label: 'REC 가중치', type: 'number', def: 1, unit: '배', group: '매출',
+      hint: '설비용량 구간별 REC 가중치. RPS 비중이 0(전량 PPA)이면 의미가 없어 자동으로 1로 고정되고 입력이 잠깁니다.' },
 
     { k: 'opexEok', label: '운영비(1년차 기준)', type: 'number', def: 49.8, unit: '억원/yr', group: '운영비' },
     { k: 'opexEscal', label: '운영비 상승률', type: 'number', def: 0.7, unit: '%/yr', group: '운영비' },
@@ -235,6 +243,17 @@
     box.className = 'spendsum ' + (ok ? 'ok' : 'bad');
     box.innerHTML = '<span>지출 합계: ' + sum.toFixed(2) + '억원</span><span>총사업비: ' + capex.toFixed(2) + '억원' +
       (ok ? ' — 일치' : ' — 차이 ' + diff.toFixed(2) + '억원') + '</span>';
+  }
+
+  // RPS 비중이 0(전량 PPA)이면 REC 가중치는 의미가 없으므로 1로 고정하고
+  // 입력을 잠근다 — RPS 비중이 0보다 커지면 다시 편집 가능하게 푼다.
+  function updateRecWeightState() {
+    var rpsEl = $('[data-k="rpsShare"]');
+    var rwEl = $('[data-k="recWeight"]');
+    if (!rpsEl || !rwEl) return;
+    var rps = Number(rpsEl.value) || 0;
+    if (rps <= 0) { rwEl.value = 1; rwEl.disabled = true; }
+    else { rwEl.disabled = false; }
   }
 
   function readCore() {
@@ -448,6 +467,16 @@
         taxMode: 1,
         localSurtaxRate: 10   // 한국 지방소득세(법인세의 10%)는 기본 적용
       });
+      // RPS(SMP+REC)/PPA 매출 이원화 — RPS 비중이 0보다 크면 두 트랙으로
+      // 나눠 엔진에 전달한다(엔진은 이미 tariffTracks를 지원). RPS 단가는
+      // 원본 Revenue!row58/63 구조와 같이 "SMP 단가 + REC가중치×REC단가"로
+      // 계산한다. 0(기존과 동일, 전량 PPA)이면 기존 단일 tariff 경로 그대로.
+      if (core.rpsShare > 0) {
+        inp.tariffTracks = [
+          { share: core.rpsShare / 100, price: core.smpPrice + core.recWeight * core.recPrice, escal: core.tariffEscal },
+          { share: 1 - core.rpsShare / 100, price: core.tariff, escal: core.tariffEscal }
+        ];
+      }
     }
     // 사업자 구성은 프리셋 여부와 무관하게 화면 입력을 그대로 쓴다 —
     // 자본금 총액을 나눠 낸 여러 출자자에게 지분율만큼 배당을 배분하는
@@ -486,6 +515,8 @@
   buildTrancheGrid();
   buildShareholderGrid();
   buildSpendCurve();
+  updateRecWeightState();
+  $('[data-k="rpsShare"]').addEventListener('input', updateRecWeightState);
   $('[data-k="constructionMonths"]').addEventListener('change', buildSpendCurve);
   $('[data-k="capexEok"]').addEventListener('change', buildSpendCurve);
   $('#spendReset').addEventListener('click', buildSpendCurve);
