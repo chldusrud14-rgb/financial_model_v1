@@ -18,9 +18,8 @@ setTimeout(() => {
 
   fireClick(d, '#run');
   setTimeout(() => {
-    const kpis0 = {};
-    d.querySelectorAll('#kpis .kpi').forEach(k => { kpis0[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
-    console.log('RPS 0%(전량 PPA) 생성 결과:', kpis0['Equity IRR (배당)']);
+    const hero0 = d.querySelector('#kpis .kpiHero .hv').textContent;
+    console.log('RPS 0%(전량 PPA) 생성 결과:', hero0);
 
     console.log('\n=== RPS 비중을 40%로 설정 ===');
     const rps = d.querySelector('[data-k="rpsShare"]');
@@ -34,11 +33,10 @@ setTimeout(() => {
 
     fireClick(d, '#run');
     setTimeout(() => {
-      const kpis1 = {};
-      d.querySelectorAll('#kpis .kpi').forEach(k => { kpis1[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
+      const hero1 = d.querySelector('#kpis .kpiHero .hv').textContent;
       console.log('RPS 40% 적용 후 생성 결과(값이 달라지면 트랙 반영된 것):');
       console.log('  총영업수익 포함 메타노트:', d.querySelector('#metaNote').textContent);
-      console.log('  Equity IRR(배당):', kpis1['Equity IRR (배당)'], '(RPS 0% 케이스', kpis0['Equity IRR (배당)'], '와 달라야 함)');
+      console.log('  Equity IRR(배당):', hero1, '(RPS 0% 케이스', hero0, '와 달라야 함)');
 
       console.log('\n=== RPS 비중 다시 0으로 ===');
       rps.value = '0'; fireInput(rps);

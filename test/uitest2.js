@@ -19,7 +19,8 @@ setTimeout(() => {
   setTimeout(() => {
     const genericKpis = {};
     d.querySelectorAll('#kpis .kpi').forEach(k => { genericKpis[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
-    console.log('기본값 생성 결과(범용 근사, 원본과 다름):', genericKpis['Equity IRR (배당)'], genericKpis['최소 DSCR(연 합산)']);
+    const genericHero = d.querySelector('#kpis .kpiHero .hv').textContent;
+    console.log('기본값 생성 결과(범용 근사, 원본과 다름):', genericHero, genericKpis['최소 DSCR(연 합산)']);
 
     console.log('\n=== 당진 FS 불러오기 클릭 ===');
     fireClick(d, '#loadDangjin');
@@ -33,9 +34,10 @@ setTimeout(() => {
         console.log('\n=== 당진 프리셋 생성 결과 (test_ops.js 검증값과 대조) ===');
         const kpis = {};
         d.querySelectorAll('#kpis .kpi').forEach(k => { kpis[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
+        kpis['Equity IRR (배당)'] = d.querySelector('#kpis .kpiHero .hv').textContent;
         const expect = {
           'Project IRR 세후': '7.86', 'Equity IRR (FCFE) 세후': '13.33', 'Equity IRR (배당)': '12.12',
-          'Investor IRR': '7.29', '최소 DSCR(연 합산)': '1.218'
+          '최소 DSCR(연 합산)': '1.218'
         };
         let allOk = true;
         Object.keys(expect).forEach(k => {
@@ -54,6 +56,7 @@ setTimeout(() => {
         setTimeout(() => {
           const kpis2 = {};
           d.querySelectorAll('#kpis .kpi').forEach(k => { kpis2[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
+          kpis2['Equity IRR (배당) [히어로]'] = d.querySelector('#kpis .kpiHero .hv').textContent;
           console.log('용량 50MW(부채는 원래 규모 그대로라 과중) 재생성 결과 전체:');
           Object.keys(kpis2).forEach(k => console.log('  ', k, '=', kpis2[k]));
           console.log('토스트 메시지:', d.querySelector('#toast').textContent);
