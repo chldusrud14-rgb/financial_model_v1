@@ -68,13 +68,17 @@
 
   var SHAREHOLDERS = [{ name: '출자자1', stakePct: 100 }];
 
-  // 민감도 분석 시나리오 — 판매단가(원/kWh)/총투자비(억원)/운영비(억원)/
+  // 민감도 분석 시나리오 — 판매단가(원/kWh)/총사업비(억원)/운영비(억원)/
   // 금리(%) 전부 델타가 아니라 절대값. 빈 칸이면 "사업 기본 가정"에 입력한
-  // 값을 그대로 쓴다. Base는 이 배열에 없고 runSensitivity()가 매번
-  // 현재 폼 값으로 새로 계산해서 결과 맨 앞에 붙인다.
+  // 값을 그대로 쓴다. Base도 다른 행과 똑같이 편집 가능한 일반 행이고,
+  // 각 행 옆 "↑" 버튼으로 그 순간의 위 입력값을 그대로 채워넣을 수 있다.
   var SENS_ROWS = [
-    { name: 'Upside', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
-    { name: 'Downside', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null }
+    { name: 'Base', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
+    { name: 'Case1', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
+    { name: 'Case2', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
+    { name: 'Case3', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
+    { name: 'Case4', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
+    { name: 'Case5', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null }
   ];
   var lastSensResults = null;
 
@@ -286,6 +290,13 @@
     tr.appendChild(cell(sc.capexAbs, 'capexAbs'));
     tr.appendChild(cell(sc.opexAbs, 'opexAbs'));
     tr.appendChild(cell(sc.rateAbs, 'rateAbs'));
+    var pullTd = document.createElement('td');
+    var pull = document.createElement('button');
+    pull.type = 'button'; pull.className = 'rm'; pull.title = '위 "사업 기본 가정" 입력값을 그대로 가져와 채우기';
+    pull.textContent = '↑';
+    pull.addEventListener('click', function () { pullFromForm(idx); });
+    pullTd.appendChild(pull);
+    tr.appendChild(pullTd);
     var rmTd = document.createElement('td');
     var rm = document.createElement('button');
     rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
@@ -299,11 +310,28 @@
     return tr;
   }
 
+  // 그 순간의 위 "사업 기본 가정" 값(판매단가/총사업비/운영비, 금리는
+  // 금액이 가장 큰 트랜치의 운영금리를 대표값으로)을 해당 시나리오 행에
+  // 그대로 채워넣는다 — Base 행을 실제 숫자로 눈에 보이게 채우고 싶을 때,
+  // 또는 다른 행을 "위 값에서 살짝만 바꿔보고 싶을 때" 시작점으로 쓴다.
+  function pullFromForm(idx) {
+    var row = document.querySelectorAll('#sensBox tbody tr')[idx];
+    if (!row) return;
+    setVal2(row, 'tariffAbs', $('[data-k="tariff"]').value);
+    setVal2(row, 'capexAbs', $('[data-k="capexEok"]').value);
+    setVal2(row, 'opexAbs', $('[data-k="opexEok"]').value);
+    var tranches = readTranches();
+    var maxT = null;
+    tranches.forEach(function (t) { if (!maxT || t.amountEok > maxT.amountEok) maxT = t; });
+    setVal2(row, 'rateAbs', maxT && maxT.amountEok > 0 ? maxT.rateO : '');
+  }
+  function setVal2(row, f, v) { var e = row.querySelector('[data-sens-f="' + f + '"]'); if (e) e.value = v; }
+
   function buildSensGrid() {
     var box = $('#sensBox');
     box.innerHTML = '';
     var t = el('table', 'tr');
-    t.innerHTML = '<thead><tr><th>시나리오</th><th>판매단가(원/kWh)</th><th>총투자비(억원)</th><th>운영비(억원)</th><th>금리(%)</th><th></th></tr></thead>';
+    t.innerHTML = '<thead><tr><th>시나리오</th><th>판매단가(원/kWh)</th><th>총사업비(억원)</th><th>운영비(억원)</th><th>금리(%)</th><th></th><th></th></tr></thead>';
     var tb = document.createElement('tbody');
     SENS_ROWS.forEach(function (sc, idx) { tb.appendChild(sensRow(sc, idx)); });
     t.appendChild(tb);
@@ -377,25 +405,20 @@
     }
     var baseInp = buildBaseInp();
 
-    // Base는 별도 입력행이 아니라 위 "사업 기본 가정"을 그대로(수정 없이)
-    // 돌린 결과를 매번 새로 계산해서 맨 앞에 붙인다 — 값을 따로
-    // 관리/입력할 필요 없이 항상 현재 폼과 일치한다.
-    var baseRow = { name: 'Base(현재 입력값)', sc: {}, isBase: true };
-    try { baseRow.kpi = M.computeModel(baseInp).kpi; }
-    catch (e) { baseRow.error = e.message; }
-
+    // Base도 다른 행과 똑같은 일반 시나리오 행이다 — 빈 칸이면 applyScenario가
+    // 알아서 위 폼 값을 그대로 쓰므로 특별 취급이 필요 없다.
     SENS_ROWS = readSensRows();
-    var results = [baseRow].concat(SENS_ROWS.map(function (sc) {
+    var results = SENS_ROWS.map(function (sc) {
       try {
         var m = M.computeModel(applyScenario(baseInp, sc));
         return { name: sc.name, sc: sc, kpi: m.kpi };
       } catch (e) {
         return { name: sc.name, sc: sc, error: e.message };
       }
-    }));
+    });
     lastSensResults = results;
     renderSensResults(results);
-    toast('민감도 분석 완료 — ' + results.length + '개 시나리오(Base 포함)');
+    toast('민감도 분석 완료 — ' + results.length + '개 시나리오');
   }
 
   function renderSensResults(results) {

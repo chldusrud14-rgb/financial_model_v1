@@ -391,7 +391,7 @@
         ws.getCell('B' + r).value = '판매단가/총투자비/운영비/금리는 델타가 아니라 절대값 — 빈 칸이면 그 시나리오는 "사업 기본 가정"에 입력한 값을 그대로 쓴다. Base(현재 입력값)는 시나리오를 하나도 안 바꾼 기준선. 화면(생성기)에서 지정한 시나리오를 각각 독립적으로 재계산한 값 — 라이브 수식이 아니라 스냅샷임.';
         ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FF6B7B76' } };
         r += 2;
-        var heads = ['시나리오', '판매단가[원/kWh]', '총투자비[억원]', '운영비[억원]', '금리[%]',
+        var heads = ['시나리오', '판매단가[원/kWh]', '총사업비[억원]', '운영비[억원]', '금리[%]',
           'Equity IRR(배당)', 'Equity IRR(FCFE)', 'Project IRR', '최소DSCR', 'NPV[억원]', '투자배수[x]'];
         heads.forEach(function (h, idx) {
           var c = ws.getCell(colLetter(2 + idx) + r);
