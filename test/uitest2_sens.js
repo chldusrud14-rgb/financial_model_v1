@@ -17,7 +17,7 @@ setTimeout(() => {
   const names = Array.from(rows).map(tr => tr.querySelector('[data-sens-f="name"]').value);
   console.log('시나리오 이름:', names.join(', '), '(기대 Base, Case1, Case2)');
 
-  console.log('\n=== "가져오기" 버튼은 Base행에만 있는지 확인 ===');
+  console.log('\n=== "불러오기" 버튼은 Base행에만 있는지 확인 ===');
   rows.forEach((tr, i) => {
     const pullBtn = tr.querySelector('button.pull');
     console.log('  ', names[i], ':', pullBtn ? '"' + pullBtn.textContent + '" 버튼 있음' : '버튼 없음', names[i] === 'Base' ? '(기대: 있음)' : '(기대: 없음)');

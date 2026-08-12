@@ -287,13 +287,13 @@
     tr.appendChild(cell(sc.capexAbs, 'capexAbs'));
     tr.appendChild(cell(sc.opexAbs, 'opexAbs'));
     tr.appendChild(cell(sc.rateAbs, 'rateAbs'));
-    // "↑"(위 입력값 가져오기)는 Base행에서만 의미가 있다 — Case는
-    // 사용자가 직접 값을 채우는 행이라 버튼을 안 둔다.
+    // "불러오기"는 Base행에서만 의미가 있다 — Case는 사용자가 직접
+    // 값을 채우는 행이라 버튼을 안 둔다.
     var pullTd = document.createElement('td');
     if (sc.name === 'Base') {
       var pull = document.createElement('button');
-      pull.type = 'button'; pull.className = 'pull'; pull.title = '위 "사업 기본 가정" 입력값을 그대로 가져와 채우기';
-      pull.textContent = '가져오기';
+      pull.type = 'button'; pull.className = 'pull'; pull.title = '위 "사업 기본 가정" 입력값을 그대로 불러와 채우기';
+      pull.textContent = '불러오기';
       pull.addEventListener('click', function () { pullFromForm(idx); });
       pullTd.appendChild(pull);
     }
