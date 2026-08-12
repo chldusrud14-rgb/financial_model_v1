@@ -70,15 +70,13 @@
 
   // 민감도 분석 시나리오 — 판매단가(원/kWh)/총사업비(억원)/운영비(억원)/
   // 금리(%) 전부 델타가 아니라 절대값. 빈 칸이면 "사업 기본 가정"에 입력한
-  // 값을 그대로 쓴다. Base도 다른 행과 똑같이 편집 가능한 일반 행이고,
-  // 각 행 옆 "↑" 버튼으로 그 순간의 위 입력값을 그대로 채워넣을 수 있다.
+  // 값을 그대로 쓴다. Base는 위 입력값을 그대로 참조하는 기준행이라
+  // "↑" 버튼으로 채울 수 있고, Case들은 사용자가 원하는 값을 직접
+  // 입력하는 행이라 버튼이 없다 — 더 필요하면 "+ 시나리오 추가"로 늘린다.
   var SENS_ROWS = [
     { name: 'Base', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
     { name: 'Case1', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
-    { name: 'Case2', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
-    { name: 'Case3', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
-    { name: 'Case4', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null },
-    { name: 'Case5', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null }
+    { name: 'Case2', tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null }
   ];
   var lastSensResults = null;
 
@@ -280,7 +278,6 @@
       var input = document.createElement('input');
       input.type = isText ? 'text' : 'number'; input.step = 'any';
       input.value = val === null || val === undefined ? '' : val;
-      input.placeholder = '위 입력값 사용';
       input.dataset.sensIdx = idx; input.dataset.sensF = f;
       td.appendChild(input);
       return td;
@@ -290,12 +287,16 @@
     tr.appendChild(cell(sc.capexAbs, 'capexAbs'));
     tr.appendChild(cell(sc.opexAbs, 'opexAbs'));
     tr.appendChild(cell(sc.rateAbs, 'rateAbs'));
+    // "↑"(위 입력값 가져오기)는 Base행에서만 의미가 있다 — Case는
+    // 사용자가 직접 값을 채우는 행이라 버튼을 안 둔다.
     var pullTd = document.createElement('td');
-    var pull = document.createElement('button');
-    pull.type = 'button'; pull.className = 'rm'; pull.title = '위 "사업 기본 가정" 입력값을 그대로 가져와 채우기';
-    pull.textContent = '↑';
-    pull.addEventListener('click', function () { pullFromForm(idx); });
-    pullTd.appendChild(pull);
+    if (sc.name === 'Base') {
+      var pull = document.createElement('button');
+      pull.type = 'button'; pull.className = 'rm'; pull.title = '위 "사업 기본 가정" 입력값을 그대로 가져와 채우기';
+      pull.textContent = '↑';
+      pull.addEventListener('click', function () { pullFromForm(idx); });
+      pullTd.appendChild(pull);
+    }
     tr.appendChild(pullTd);
     var rmTd = document.createElement('td');
     var rm = document.createElement('button');
@@ -833,7 +834,7 @@
   $('#shbox').addEventListener('input', updateShareholderSum);
   buildSensGrid();
   $('#sensAdd').addEventListener('click', function () {
-    SENS_ROWS.push({ name: '시나리오' + (SENS_ROWS.length + 1), tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null });
+    SENS_ROWS.push({ name: 'Case' + SENS_ROWS.length, tariffAbs: null, capexAbs: null, opexAbs: null, rateAbs: null });
     buildSensGrid();
   });
   $('#sensRun').addEventListener('click', runSensitivity);
