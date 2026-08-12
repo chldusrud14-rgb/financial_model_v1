@@ -14,7 +14,6 @@
       hint: '하루 24시간 중 정격출력으로 발전한 것으로 환산한 시간. 이용률(%) = 이 값÷24. 보통 3.3~3.9' },
     { k: 'tariff', label: 'PPA 또는 SMP+REC 판매단가', type: 'number', def: 154.8, unit: '원/kWh', essential: true,
       hint: 'PPA·SMP+REC 등 여러 단가를 물량가중평균한 값' },
-    { k: 'tariffEscal', label: '판매단가 상승률', type: 'number', def: 0, unit: '%/yr', essential: true },
     { k: 'capexEok', label: '총사업비(건설이자 제외)', type: 'number', def: 1410.69, unit: '억원', essential: true,
       hint: 'EPC·인허가·개발비 등 순수 공사비 합계 — 건설이자(IDC)는 여기 포함 안 함, 자동 계산됨' },
     { k: 'opexEok', label: '운영비(1년차 기준)', type: 'number', def: 49.8, unit: '억원/yr', essential: true },
@@ -37,6 +36,7 @@
       hint: '총투자비 중 감가상각 대상 자산의 비율(토지 등 제외분 빼고)' },
     { k: 'depYears', label: '감가상각 내용연수', type: 'number', def: 20, unit: 'Year', group: '재원조달·감가상각' },
 
+    { k: 'tariffEscal', label: '판매단가 상승률', type: 'number', def: 0, unit: '%/yr', group: '매출' },
     { k: 'rpsShare', label: 'RPS(SMP+REC) 비중', type: 'number', def: 0, unit: '%', group: '매출',
       hint: '설비용량 중 SMP+REC(RPS)로 정산받는 비중. 나머지는 PPA(위 "판매단가")로 계산됩니다. 0이면 기존과 동일하게 전량 PPA로 계산됩니다.' },
     { k: 'smpPrice', label: 'SMP 단가', type: 'number', def: 135, unit: '원/kWh', group: '매출',
@@ -107,7 +107,7 @@
   var ESSENTIAL_ROWS = [
     ['projectName'],
     ['capacityMW', 'dailyHours'],
-    ['tariff', 'tariffEscal'],
+    ['tariff'],
     ['capexEok', 'opexEok'],
     ['equityEok', 'equityRatioPct']
   ];
