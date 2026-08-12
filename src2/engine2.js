@@ -682,6 +682,25 @@
       pvGen += p.gen / df;
     });
 
+    var totalDividendKRWm = rows.reduce(function (a, r) { return a + r.dividend; }, 0);
+
+    /* ---- 사업자(출자자) 구성 ----
+       모든 출자자가 매 인출·배당에 지분율대로 비례 참여한다고 가정(pro-rata
+       cap table) — 타이밍이 전부 동일하므로 IRR은 출자자별로 동일하고
+       금액만 지분율만큼 scale된다. inp.shareholders가 없으면 단일 100%
+       출자자로 취급한다. */
+    var shList = (inp.shareholders && inp.shareholders.length) ? inp.shareholders : [{ name: '출자자', stakePct: 100 }];
+    var shareholders = shList.map(function (s) {
+      var frac = (s.stakePct || 0) / 100;
+      return {
+        name: s.name, stakePct: s.stakePct,
+        equityKRWm: equity * frac,
+        dividendKRWm: totalDividendKRWm * frac,
+        equityIRR: annualize(eIRRp, ppy),
+        dividendIRR: annualize(dIRRp, ppy)
+      };
+    });
+
     return {
       inp: inp, periods: ps, rows: rows, tranches: trs, con: con,
       idc: idc, tic: tic, equity: equity,
@@ -697,12 +716,13 @@
         avgDSCR: dscrs.length ? dscrs.reduce(function (a, b) { return a + b; }, 0) / dscrs.length : null,
         minCumDSCR: annualCumDscrs.length ? Math.min.apply(null, annualCumDscrs) : null,
         minDSCRAnnual: annualDscrs.length ? Math.min.apply(null, annualDscrs) : null,
-        totalDividend: rows.reduce(function (a, r) { return a + r.dividend; }, 0),
+        totalDividend: totalDividendKRWm,
         totalRevenue: rows.reduce(function (a, r) { return a + r.revenue; }, 0),
         totalOpex: rows.reduce(function (a, r) { return a + r.opex; }, 0),
         totalInterest: rows.reduce(function (a, r) { return a + r.interest; }, 0),
         totalTax: rows.reduce(function (a, r) { return a + r.tax; }, 0),
-        lcoe: pvGen > 0 ? pvOpex / pvGen * 1000 : 0
+        lcoe: pvGen > 0 ? pvOpex / pvGen * 1000 : 0,
+        shareholders: shareholders
       }
     };
   }

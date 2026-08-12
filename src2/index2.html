@@ -40,17 +40,43 @@ button,input,select{font-family:inherit;font-size:inherit;color:inherit}
 .f input,.f select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#FBFCFC;font-size:13px;font-weight:600;outline:none}
 .f input:focus,.f select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(46,125,98,.12);background:#fff}
 .f .unit{position:absolute;right:11px;font-size:11px;color:var(--muted);font-weight:600;pointer-events:none}
+.f .fhint{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.4}
 .full{grid-column:1/-1}
 
+/* 섹션 그룹 + 더보기(상세가정) — v1과 같은 패턴 */
+.grp{margin-bottom:18px}
+.grp>b{display:block;font-size:11px;letter-spacing:.06em;color:var(--brand-d);margin-bottom:10px;font-weight:800;text-transform:uppercase}
+.grp:last-child{margin-bottom:0}
+details.more{margin-top:6px;border-top:1px dashed var(--line);padding-top:16px}
+details.more>summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--brand-d);list-style:none;display:flex;align-items:center;gap:7px;user-select:none}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary::before{content:"+";display:inline-grid;place-items:center;width:18px;height:18px;border-radius:6px;background:var(--brand-l);font-size:13px;flex:0 0 18px}
+details.more[open]>summary::before{content:"–"}
+details.more .body2{padding-top:16px}
+
 table.tr{width:100%;border-collapse:collapse;font-size:12px}
-table.tr th{background:#F7FAF9;font-weight:700;color:var(--ink2);padding:7px 6px;border-bottom:1px solid var(--line);text-align:center}
-table.tr td{padding:5px 4px;border-bottom:1px solid var(--line)}
-table.tr td input,table.tr td select{width:100%;padding:6px 6px;border:1px solid var(--line);border-radius:7px;font-size:12px;font-weight:600;text-align:right}
+table.tr th{background:#F7FAF9;font-weight:700;color:var(--ink2);padding:8px 6px;border-bottom:1px solid var(--line);text-align:center}
+table.tr td{padding:6px 4px;border-bottom:1px solid var(--line)}
+table.tr tbody tr:nth-child(even) td{background:#FAFCFB}
+table.tr td input,table.tr td select{width:100%;padding:7px 6px;border:1px solid var(--line);border-radius:7px;font-size:12px;font-weight:600;text-align:right}
 table.tr td select{text-align:left}
 table.tr th:first-child,table.tr td:first-child{text-align:left;font-weight:700}
+table.tr td input:focus,table.tr td select:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(46,125,98,.12);background:#fff}
+.trlegend{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6}
+.trlegend b{color:var(--ink2);font-weight:700}
 
 .spendrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .spendrow .f{flex:1;min-width:90px}
+.spendsum{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:10px 12px;border-radius:9px;font-size:12px;font-weight:700}
+.spendsum.ok{background:var(--brand-l);color:var(--brand-d)}
+.spendsum.bad{background:#FBF3EC;color:#8A5225}
+
+.shrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.shrow input[data-sh-name]{flex:1.4}
+.shrow input[data-sh-stake]{flex:0.7}
+.shrow .unit{font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
+.shrow .rm{flex:0 0 auto;border:1px solid var(--line);background:#fff;color:var(--bad);border-radius:8px;width:30px;height:34px;cursor:pointer;font-size:14px;font-weight:700}
+.shrow .rm:hover{background:#FBF3EC;border-color:#EBD3BB}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:11px;background:var(--brand-d);color:#fff;font-weight:700;font-size:13.5px;padding:12px 20px;cursor:pointer}
 .btn:hover{background:#0F3A2D}
@@ -95,19 +121,41 @@ table.tr th:first-child,table.tr td:first-child{text-align:left;font-weight:700}
     <div>
       <div class="card">
         <div class="hd"><span class="badge">1</span><h4>사업 기본 가정</h4></div>
-        <div class="body"><div class="grid" id="core"></div></div>
+        <div class="body"><div id="core"></div></div>
       </div>
 
       <div class="card">
-        <div class="hd"><span class="badge">2</span><h4>트랜치 (자본금 + 선순위 A~D + 후순위)</h4></div>
-        <div class="hint">투입순서가 같으면 금액 비례로 동시 인출됩니다. 금액 0인 트랜치는 조건만 살아있고 인출되지 않습니다.</div>
-        <div class="body"><div id="trbox"></div></div>
+        <div class="hd"><span class="badge">2</span><h4>차입 트랜치 (자본금 + 선순위 A~D + 후순위)</h4></div>
+        <div class="hint">보통 선순위 트랜치 1~2개만 채우고 나머지는 금액 0으로 두면 됩니다. "투입순서"가 같은 트랜치는 금액 비례로 동시에 인출됩니다.</div>
+        <div class="body">
+          <div id="trbox"></div>
+          <div class="trlegend">
+            <b>투입순서</b>: 숫자가 작을수록 먼저 인출(1=가장 먼저) · <b>거치</b>: 원금 상환 없이 이자만 내는 기간(년) ·
+            <b>상환</b>: 거치 이후 원금을 갚아나가는 기간(년) · <b>방식</b>: 원금균등(매기 동일 원금) / 원리금균등(매기 동일 총상환액)
+          </div>
+        </div>
       </div>
 
       <div class="card">
-        <div class="hd"><span class="badge">3</span><h4>공사비 지출 곡선</h4></div>
-        <div class="hint">건설기간 분기 수만큼 지출액(억원)을 직접 입력합니다. DSRA는 준공분기에 별도 조달되어 포함하지 않습니다.</div>
-        <div class="body"><div class="spendrow" id="spendbox"></div></div>
+        <div class="hd"><span class="badge">3</span><h4>사업자 구성 (지분)</h4>
+          <button class="btn ghost" id="shAdd" style="margin-left:auto">+ 출자자 추가</button>
+        </div>
+        <div class="hint">자본금(자본금 항목의 총액)을 여러 출자자가 나눠 낼 때 이름과 지분율을 입력합니다. 지분율 합은 100%여야 하고, 모든 출자자는 각자 지분율만큼 자본금 납입·배당 수령을 동일한 타이밍에 비례로 나눠 갖는다고 가정합니다.</div>
+        <div class="body">
+          <div id="shbox"></div>
+          <div class="spendsum" id="shsum"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd"><span class="badge">4</span><h4>공사비 지출 곡선</h4>
+          <button class="btn ghost" id="spendReset" style="margin-left:auto">균등분배로 재설정</button>
+        </div>
+        <div class="hint">공사기간(분기)마다 실제 얼마씩 돈이 나가는지 입력합니다. 보통 공사 초반·후반에 몰리는데, 잘 모르면 균등분배로 두면 됩니다. DSRA는 준공분기에 별도로 조달돼서 여기 포함 안 합니다.</div>
+        <div class="body">
+          <div class="spendrow" id="spendbox"></div>
+          <div class="spendsum" id="spendsum"></div>
+        </div>
       </div>
 
       <button class="btn" id="run" style="width:100%">재무모델 생성</button>
@@ -121,6 +169,7 @@ table.tr th:first-child,table.tr td:first-child{text-align:left;font-weight:700}
         <div class="body">
           <div class="kpis" id="kpis"></div>
           <div class="note" id="metaNote"></div>
+          <div id="shResults"></div>
         </div>
       </div>
     </div>

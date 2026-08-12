@@ -157,7 +157,28 @@
       section(ws, r, '건설이자(IDC)'); r += 2;
       put(ws, 'B' + r, 'IDC 합계[KRWm]'); put(ws, 'C' + r, model.idc, FMT_M); r++;
       put(ws, 'B' + r, '총투자비(TIC)[KRWm]'); put(ws, 'C' + r, model.tic, FMT_M); r++;
-      put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); put(ws, 'C' + r, inp.capexEok * 100, FMT_M);
+      put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); put(ws, 'C' + r, inp.capexEok * 100, FMT_M); r++;
+
+      var sh = model.kpi && model.kpi.shareholders;
+      if (sh && sh.length > 1) {
+        r += 1;
+        section(ws, r, '사업자 구성 (지분)'); r += 2;
+        ['사업자', '지분율', '출자금액[KRWm]', '누적배당[KRWm]'].forEach(function (h, idx) {
+          var c = ws.getCell(colLetter(2 + idx) + r);
+          c.value = h;
+          c.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+          c.alignment = { horizontal: 'center' };
+        });
+        r++;
+        sh.forEach(function (s) {
+          put(ws, 'B' + r, s.name);
+          put(ws, 'C' + r, s.stakePct / 100, FMT_P);
+          put(ws, 'D' + r, s.equityKRWm, FMT_M);
+          put(ws, 'E' + r, s.dividendKRWm, FMT_M);
+          r++;
+        });
+      }
     })();
 
     /* =========================================================

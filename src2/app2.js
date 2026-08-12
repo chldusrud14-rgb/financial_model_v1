@@ -4,35 +4,58 @@
   var el = function (t, c, h) { var e = document.createElement(t); if (c) e.className = c; if (h !== undefined) e.innerHTML = h; return e; };
   var M = window.SolarModel2, X = window.SolarXlsx2;
 
-  /* ---------- 기본 입력 필드 ---------- */
+  /* ---------- 기본 입력 필드 ----------
+     essential: 항상 보이는 핵심 가정. 나머지는 그룹별로 묶어서
+     "상세 가정" 접힘 영역에 넣는다 — 26개를 한 화면에 쭉 나열하지 않는다. */
   var CORE = [
-    ['projectName', '사업명', 'text', '태양광 발전사업'],
-    ['capacityMW', '설비용량', 'number', 99.998, 'MW'],
-    ['dailyHours', '일일 발전시간(환산)', 'number', 3.77, 'h/day'],
-    ['degradation', 'Degradation', 'number', 0.5, '%/yr'],
-    ['auxRate', '소내 소비율', 'number', 0, '%'],
-    ['constructionStart', '착공시점(YYYY-MM)', 'text', '2024-06'],
-    ['constructionMonths', '공사기간', 'number', 16, 'Month'],
-    ['operationYears', '운영기간', 'number', 20, 'Year'],
-    ['capexEok', '총사업비(건설이자 제외)', 'number', 1410.69, '억원'],
-    ['dsraEok', '최초 DSRA', 'number', 50, '억원'],
-    ['equityEok', '자본금', 'number', 150, '억원'],
-    ['tariff', '판매단가(가중평균)', 'number', 154.8, '원/kWh'],
-    ['tariffEscal', '단가 상승률', 'number', 0, '%/yr'],
-    ['opexEok', '운영비(1년차)', 'number', 49.8, '억원/yr'],
-    ['opexEscal', '운영비 상승률', 'number', 0.7, '%/yr'],
-    ['decomEok', '철거·복구비(만기)', 'number', 20, '억원'],
-    ['depRatio', '감가상각 대상비율', 'number', 95, '%'],
-    ['depYears', '내용연수', 'number', 20, 'Year'],
-    ['lossRate', '이월결손금 공제한도', 'number', 80, '%'],
-    ['taxFlat', '단일 법인세율(taxMode=2용)', 'number', 21, '%'],
-    ['dsraMonths', 'DSRA 적립기준', 'number', 6, 'Month'],
-    ['minCash', '배당 후 최소보유현금', 'number', 10, '억원'],
-    ['divDSCR', '배당제한 단순DSCR', 'number', 1.1, 'x'],
-    ['divCumDSCR', '배당제한 누적DSCR', 'number', 1.15, 'x'],
-    ['divStartYear', '배당개시 연차(폴백용)', 'number', 2, 'Year'],
-    ['discount', '할인율(NPV)', 'number', 5.5, '%']
+    { k: 'projectName', label: '사업명', type: 'text', def: '태양광 발전사업', essential: true },
+    { k: 'capacityMW', label: '설비용량', type: 'number', def: 99.998, unit: 'MW', essential: true },
+    { k: 'dailyHours', label: '일일 발전시간(환산)', type: 'number', def: 3.77, unit: 'h/day', essential: true,
+      hint: '하루 24시간 중 정격출력으로 발전한 것으로 환산한 시간. 이용률(%) = 이 값÷24. 보통 3.3~3.9' },
+    { k: 'tariff', label: '판매단가(가중평균)', type: 'number', def: 154.8, unit: '원/kWh', essential: true,
+      hint: 'PPA·SMP+REC 등 여러 단가를 물량가중평균한 값' },
+    { k: 'capexEok', label: '총사업비(건설이자 제외)', type: 'number', def: 1410.69, unit: '억원', essential: true,
+      hint: 'EPC·인허가·개발비 등 순수 공사비 합계 — 건설이자(IDC)는 여기 포함 안 함, 자동 계산됨' },
+    { k: 'equityEok', label: '자본금', type: 'number', def: 150, unit: '억원', essential: true },
+
+    { k: 'degradation', label: '연간 출력저하(Degradation)', type: 'number', def: 0.5, unit: '%/yr', group: '발전소 특성',
+      hint: '매년 정액으로 발전량이 이만큼씩 줄어든다고 가정 (복리 아님)' },
+    { k: 'auxRate', label: '소내 소비율', type: 'number', def: 0, unit: '%', group: '발전소 특성',
+      hint: '발전한 전력 중 설비 자체가 쓰는 비율' },
+    { k: 'constructionStart', label: '착공시점', type: 'text', def: '2024-06', unit: 'YYYY-MM', group: '발전소 특성' },
+    { k: 'constructionMonths', label: '공사기간', type: 'number', def: 16, unit: 'Month', group: '발전소 특성' },
+    { k: 'operationYears', label: '운영기간', type: 'number', def: 20, unit: 'Year', group: '발전소 특성' },
+
+    { k: 'dsraEok', label: '최초 DSRA', type: 'number', def: 50, unit: '억원', group: '재원조달·감가상각',
+      hint: '준공 시점에 별도로 적립해두는 원리금상환 예비재원' },
+    { k: 'depRatio', label: '감가상각 대상비율', type: 'number', def: 95, unit: '%', group: '재원조달·감가상각',
+      hint: '총투자비 중 감가상각 대상 자산의 비율(토지 등 제외분 빼고)' },
+    { k: 'depYears', label: '감가상각 내용연수', type: 'number', def: 20, unit: 'Year', group: '재원조달·감가상각' },
+
+    { k: 'tariffEscal', label: '판매단가 상승률', type: 'number', def: 0, unit: '%/yr', group: '매출' },
+
+    { k: 'opexEok', label: '운영비(1년차 기준)', type: 'number', def: 49.8, unit: '억원/yr', group: '운영비' },
+    { k: 'opexEscal', label: '운영비 상승률', type: 'number', def: 0.7, unit: '%/yr', group: '운영비' },
+    { k: 'decomEok', label: '철거·복구비(만기 시점)', type: 'number', def: 20, unit: '억원', group: '운영비' },
+
+    { k: 'lossRate', label: '이월결손금 공제한도', type: 'number', def: 80, unit: '%', group: '세무',
+      hint: '그 해 과세소득 중 이월결손금으로 상계 가능한 비율' },
+    { k: 'taxFlat', label: '단일 법인세율', type: 'number', def: 21, unit: '%', group: '세무',
+      hint: '누진세율 대신 단일세율을 쓰고 싶을 때만 참고(기본은 누진 브래킷 적용)' },
+
+    { k: 'dsraMonths', label: 'DSRA 적립기준', type: 'number', def: 6, unit: 'Month', group: '현금관리·배당',
+      hint: '차기 몇 개월분 원리금을 항상 예비로 쌓아둘지' },
+    { k: 'minCash', label: '배당 후 최소보유현금', type: 'number', def: 10, unit: '억원', group: '현금관리·배당' },
+    { k: 'divDSCR', label: '배당제한 — 단순DSCR', type: 'number', def: 1.1, unit: 'x', group: '현금관리·배당',
+      hint: '이 값 미만이면 그 분기 원리금 상환여력이 부족하다고 보고 배당을 막음' },
+    { k: 'divCumDSCR', label: '배당제한 — 누적DSCR', type: 'number', def: 1.15, unit: 'x', group: '현금관리·배당' },
+    { k: 'divStartYear', label: '배당개시 연차', type: 'number', def: 2, unit: 'Year', group: '현금관리·배당',
+      hint: '"당진 FS 불러오기"를 안 썼을 때만 적용되는 간이 기준(실측 배당 로직 미사용 시 폴백)' },
+
+    { k: 'discount', label: '할인율(NPV 계산용)', type: 'number', def: 5.5, unit: '%', group: '평가' }
   ];
+
+  var SHAREHOLDERS = [{ name: '출자자1', stakePct: 100 }];
 
   var TRANCHES = [
     { key: 'A', name: '선순위A', amountEok: 500, order: 2, rateO: 5.6, graceYears: 2, repayYears: 16 },
@@ -42,22 +65,51 @@
     { key: 'sub', name: '후순위', amountEok: 0, order: 1, rateO: 5.65, graceYears: 15, repayYears: 2.75 }
   ];
 
+  function fieldEl(d) {
+    var wrapf = el('div', 'f' + (d.type === 'text' ? ' full' : ''));
+    wrapf.appendChild(el('label', null, d.label));
+    var inw = el('div', 'in2');
+    var input = document.createElement('input');
+    input.type = d.type === 'text' ? 'text' : 'number';
+    input.step = 'any';
+    input.value = d.def;
+    input.dataset.k = d.k;
+    inw.appendChild(input);
+    if (d.unit) inw.appendChild(el('span', 'unit', d.unit));
+    wrapf.appendChild(inw);
+    if (d.hint) wrapf.appendChild(el('div', 'fhint', d.hint));
+    return wrapf;
+  }
+
   function buildCore() {
     var wrap = $('#core');
-    CORE.forEach(function (d) {
-      var wrapf = el('div', 'f' + (d[2] === 'text' ? ' full' : ''));
-      wrapf.appendChild(el('label', null, d[1]));
-      var inw = el('div', 'in2');
-      var input = document.createElement('input');
-      input.type = d[2] === 'text' ? 'text' : 'number';
-      input.step = 'any';
-      input.value = d[3];
-      input.dataset.k = d[0];
-      inw.appendChild(input);
-      if (d[4]) { var u = el('span', 'unit', d[4]); inw.appendChild(u); }
-      wrapf.appendChild(inw);
-      wrap.appendChild(wrapf);
+    var essential = el('div', 'grid');
+    CORE.filter(function (d) { return d.essential; }).forEach(function (d) { essential.appendChild(fieldEl(d)); });
+    wrap.appendChild(essential);
+
+    // 그룹별로 묶어서 "상세 가정" 접힘 영역에 — 26개를 한 화면에 쭉 나열하지 않는다.
+    var groups = [];
+    CORE.filter(function (d) { return !d.essential; }).forEach(function (d) {
+      var g = groups.filter(function (x) { return x.name === d.group; })[0];
+      if (!g) { g = { name: d.group, items: [] }; groups.push(g); }
+      g.items.push(d);
     });
+    var det = document.createElement('details');
+    det.className = 'more';
+    var sum = document.createElement('summary');
+    sum.textContent = '상세 가정 (발전소 특성 · 재원조달 · 세무 · 배당 등)';
+    det.appendChild(sum);
+    var body2 = el('div', 'body2');
+    groups.forEach(function (g) {
+      var grp = el('div', 'grp');
+      grp.appendChild(el('b', null, g.name));
+      var gg = el('div', 'grid');
+      g.items.forEach(function (d) { gg.appendChild(fieldEl(d)); });
+      grp.appendChild(gg);
+      body2.appendChild(grp);
+    });
+    det.appendChild(body2);
+    wrap.appendChild(det);
   }
 
   function buildTrancheGrid() {
@@ -101,6 +153,56 @@
     box.appendChild(t);
   }
 
+  /* ---------- 사업자(출자자) 구성 ----------
+     자본금을 나눠 낼 여러 출자자를 이름+지분율로 입력받는다. 모든 출자자는
+     지분율만큼 자본금 납입·배당 수령에 비례 참여한다고 가정(pro-rata). */
+  function shRow(sh, idx) {
+    var row = el('div', 'shrow');
+    var name = document.createElement('input');
+    name.type = 'text'; name.value = sh.name; name.dataset.shName = idx;
+    var stake = document.createElement('input');
+    stake.type = 'number'; stake.step = 'any'; stake.value = sh.stakePct; stake.dataset.shStake = idx;
+    var unit = el('span', 'unit', '%');
+    row.appendChild(name); row.appendChild(stake); row.appendChild(unit);
+    var rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
+    rm.addEventListener('click', function () {
+      if (SHAREHOLDERS.length <= 1) return;
+      SHAREHOLDERS.splice(idx, 1);
+      buildShareholderGrid();
+    });
+    row.appendChild(rm);
+    return row;
+  }
+
+  function buildShareholderGrid() {
+    var box = $('#shbox');
+    box.innerHTML = '';
+    SHAREHOLDERS.forEach(function (sh, idx) { box.appendChild(shRow(sh, idx)); });
+    updateShareholderSum();
+  }
+
+  function readShareholders() {
+    var names = Array.prototype.slice.call(document.querySelectorAll('[data-sh-name]'));
+    return names.map(function (e) {
+      var idx = e.dataset.shName;
+      var stakeEl = document.querySelector('[data-sh-stake="' + idx + '"]');
+      return { name: e.value || ('출자자' + (Number(idx) + 1)), stakePct: Number(stakeEl.value) || 0 };
+    });
+  }
+
+  function updateShareholderSum() {
+    var box = $('#shsum');
+    if (!box) return;
+    var list = readShareholders();
+    // 화면에 그려진 값을 상태(SHAREHOLDERS)에도 반영해둔다(재렌더 시 유지).
+    SHAREHOLDERS = list;
+    var sum = list.reduce(function (a, s) { return a + (s.stakePct || 0); }, 0);
+    var ok = Math.abs(sum - 100) < 0.01;
+    box.className = 'spendsum ' + (ok ? 'ok' : 'bad');
+    box.innerHTML = '<span>지분율 합계: ' + sum.toFixed(2) + '%</span><span>' + (ok ? '100% — 일치' : '100%와 차이 ' + (sum - 100).toFixed(2) + '%p') + '</span>';
+  }
+
   function buildSpendCurve() {
     var box = $('#spendbox');
     box.innerHTML = '';
@@ -120,13 +222,26 @@
       f.appendChild(inw);
       box.appendChild(f);
     }
+    updateSpendSum();
+  }
+
+  function updateSpendSum() {
+    var box = $('#spendsum');
+    if (!box) return;
+    var capex = Number($('[data-k="capexEok"]').value) || 0;
+    var sum = readSpendCurve().reduce(function (a, b) { return a + (b || 0); }, 0);
+    var diff = sum - capex;
+    var ok = Math.abs(diff) < 0.5;
+    box.className = 'spendsum ' + (ok ? 'ok' : 'bad');
+    box.innerHTML = '<span>지출 합계: ' + sum.toFixed(2) + '억원</span><span>총사업비: ' + capex.toFixed(2) + '억원' +
+      (ok ? ' — 일치' : ' — 차이 ' + diff.toFixed(2) + '억원') + '</span>';
   }
 
   function readCore() {
     var inp = {};
     CORE.forEach(function (d) {
-      var v = $('[data-k="' + d[0] + '"]').value;
-      inp[d[0]] = d[2] === 'text' ? v : Number(v);
+      var v = $('[data-k="' + d.k + '"]').value;
+      inp[d.k] = d.type === 'text' ? v : Number(v);
     });
     return inp;
   }
@@ -232,6 +347,7 @@
     ref.spendCurve_KRWm.forEach(function (v, i) {
       var e = $('[data-spend="' + i + '"]'); if (e) e.value = (v / 100).toFixed(2);
     });
+    updateSpendSum();
 
     var byName = {};
     ref.tranches.forEach(function (t) { byName[t.name] = t; });
@@ -283,6 +399,25 @@
     $('#metaNote').textContent = '기간 수(분기): ' + model.periods.length +
       ' · 마지막 분기: ' + model.periods[model.periods.length - 1].endStr +
       ' · 총영업수익 ' + f0(k.totalRevenue) + 'KRWm · 총선순위이자 ' + f0(k.totalInterest) + 'KRWm';
+
+    var shBox = $('#shResults');
+    shBox.innerHTML = '';
+    if (k.shareholders && k.shareholders.length > 1) {
+      var wrap = el('div', 'grp');
+      wrap.appendChild(el('b', null, '사업자별 배분'));
+      var t = el('table', 'tr');
+      t.innerHTML = '<thead><tr><th>사업자</th><th>지분율</th><th>출자금액(KRWm)</th><th>누적배당(KRWm)</th></tr></thead>';
+      var tb = document.createElement('tbody');
+      k.shareholders.forEach(function (sh) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td>' + sh.name + '</td><td style="text-align:right">' + sh.stakePct.toFixed(2) +
+          '%</td><td style="text-align:right">' + f0(sh.equityKRWm) + '</td><td style="text-align:right">' + f0(sh.dividendKRWm) + '</td>';
+        tb.appendChild(row);
+      });
+      t.appendChild(tb);
+      wrap.appendChild(t);
+      shBox.appendChild(wrap);
+    }
   }
 
   function toast(msg) {
@@ -314,6 +449,10 @@
         localSurtaxRate: 10   // 한국 지방소득세(법인세의 10%)는 기본 적용
       });
     }
+    // 사업자 구성은 프리셋 여부와 무관하게 화면 입력을 그대로 쓴다 —
+    // 자본금 총액을 나눠 낸 여러 출자자에게 지분율만큼 배당을 배분하는
+    // 표시용 계산이라 원본 검증치(periodOverrides 등)와는 독립적이다.
+    inp = Object.assign({}, inp, { shareholders: readShareholders() });
     try {
       model = M.computeModel(inp);
       renderKPIs();
@@ -345,9 +484,17 @@
 
   buildCore();
   buildTrancheGrid();
+  buildShareholderGrid();
   buildSpendCurve();
   $('[data-k="constructionMonths"]').addEventListener('change', buildSpendCurve);
   $('[data-k="capexEok"]').addEventListener('change', buildSpendCurve);
+  $('#spendReset').addEventListener('click', buildSpendCurve);
+  $('#spendbox').addEventListener('input', updateSpendSum);
+  $('#shAdd').addEventListener('click', function () {
+    SHAREHOLDERS.push({ name: '출자자' + (SHAREHOLDERS.length + 1), stakePct: 0 });
+    buildShareholderGrid();
+  });
+  $('#shbox').addEventListener('input', updateShareholderSum);
   $('#run').addEventListener('click', run);
   $('#xls').addEventListener('click', download);
   $('#loadDangjin').addEventListener('click', loadDangjin);
