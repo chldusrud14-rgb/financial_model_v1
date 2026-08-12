@@ -89,7 +89,7 @@
         td.appendChild(input);
         row.appendChild(td);
       });
-      var mtd = document.createElement('td');
+  var mtd = document.createElement('td');
       var sel = document.createElement('select');
       sel.innerHTML = '<option value="1">원금균등</option><option value="2">원리금균등</option>';
       sel.dataset.tr = tr.key; sel.dataset.f = 'method';
@@ -145,6 +145,118 @@
     });
   }
 
+  /* ---------- 당진 FS 프리셋 ----------
+     test/test_ops.js·scripts/sample2.js와 완전히 동일한 방식으로 reference.json
+     (80개 분기 실측 오버라이드 + 세액공제/AMT + 배당 결의 타이밍)을 그대로
+     엔진 입력으로 구성한다 — 이게 없으면 화면은 검증된 숫자를 재현하지 못한다. */
+  var usingPreset = false, presetInp = null, suppressDirty = false;
+
+  function buildDangjinInp(ref) {
+    function findTranche(name) { return ref.tranches.find(function (t) { return t.name === name; }); }
+    function scheduleFor(letter) {
+      var s = ref.repaySchedule_case3[letter];
+      return s ? s.map(function (p) { return p[1]; }) : null;
+    }
+    var trancheDefs = [['선순위A', 'A'], ['선순위B', 'B'], ['선순위C', 'C'], ['선순위D', null], ['후순위', null]];
+    return {
+      projectName: '당진 태양광발전', ppy: 4,
+      capacityMW: ref.project.capacityMW,
+      capacityFactor: ref.project.capacityFactor * 100,
+      dailyHours: ref.project.dailyHours,
+      degradation: ref.project.degradation * 100,
+      auxRate: 0,
+      constructionStart: ref.project.constructionStart,
+      constructionMonths: ref.project.constructionMonths,
+      operationYears: ref.project.operationYears,
+      capexEok: ref.funding.TIC_exIDC / 100,
+      dsraEok: ref.funding.DSRA / 100,
+      opexItems: ref.opexItems.map(function (it) { return { annualKRWm: it.annualKRWm, escal: it.escalRate * 100, senior: it.senior }; }),
+      spendCurve: ref.spendCurve_KRWm,
+      tariffTracks: ref.tariffTracks.map(function (t) { return { share: t.share, price: t.price }; }),
+      seasonality: (function () { var o = {}; Object.keys(ref.seasonality).forEach(function (m) { o[Number(m)] = ref.seasonality[m]; }); return o; })(),
+      equityEok: ref.funding.equity / 100, equityOrder: ref.funding.equityOrder,
+      tranches: trancheDefs.map(function (d) {
+        var name = d[0], letter = d[1];
+        var t = findTranche(name);
+        return {
+          name: t.name, amountEok: t.amount / 100, order: t.order,
+          rateC: t.rateCon * 100, rateO: t.rateOp * 100,
+          graceYears: t.graceYears, repayYears: t.repayYears, method: t.method,
+          repayStart: letter ? t.repayStart : null,
+          schedule: letter ? scheduleFor(letter) : null
+        };
+      }),
+      depRatio: 95, depYears: 20, depBaseOverride: ref.depreciableBaseKRWm, taxMode: 1, taxFlat: 21, lossRate: 80,
+      investmentCreditRate: ref.taxCredit.investmentCreditRate, amtRate: ref.taxCredit.amtRate,
+      localSurtaxRate: ref.taxCredit.localSurtaxRate, creditSurtaxRate: ref.taxCredit.creditSurtaxRate,
+      investmentCreditBaseByYear: ref.taxCredit.investmentCreditBaseByYear, preOpLossKRWm: ref.taxCredit.preOpLossKRWm,
+      preOpLossByYear: ref.taxCredit.preOpLossByYear,
+      extraTaxDeductionKRWm: ref.extraTaxDeductionKRWm, agentFeeKRWm: ref.agentFeeKRWm,
+      periodOverrides: ref.periodOverrides,
+      decomEok: ref.results.철거비 / 100,
+      dsraMonths: 6, minCash: 10, divDSCR: 1.1, divCumDSCR: 1.15, divStartYear: 2, discount: 5.5,
+      dividendMonth: ref.dividendMonth, firstDividendYear: ref.firstDividendYear
+    };
+  }
+
+  function setVal(sel, v) { var e = $(sel); if (e) e.value = v; }
+
+  function loadDangjin() {
+    var ref = window.__DANGJIN_REFERENCE__;
+    if (!ref) { toast('당진 실측 데이터가 이 빌드에 포함되어 있지 않습니다'); return; }
+    suppressDirty = true;
+    setVal('[data-k="projectName"]', '당진 태양광발전');
+    setVal('[data-k="capacityMW"]', ref.project.capacityMW);
+    setVal('[data-k="dailyHours"]', ref.project.dailyHours);
+    setVal('[data-k="degradation"]', ref.project.degradation * 100);
+    setVal('[data-k="auxRate"]', 0);
+    setVal('[data-k="constructionStart"]', ref.project.constructionStart);
+    setVal('[data-k="constructionMonths"]', ref.project.constructionMonths);
+    setVal('[data-k="operationYears"]', ref.project.operationYears);
+    setVal('[data-k="capexEok"]', (ref.funding.TIC_exIDC / 100).toFixed(2));
+    setVal('[data-k="dsraEok"]', ref.funding.DSRA / 100);
+    setVal('[data-k="equityEok"]', ref.funding.equity / 100);
+    setVal('[data-k="tariff"]', ref.project.tariff_wavg);
+    setVal('[data-k="tariffEscal"]', 0);
+    var totalOpex = ref.opexItems.reduce(function (a, it) { return a + it.annualKRWm; }, 0);
+    setVal('[data-k="opexEok"]', (totalOpex / 100).toFixed(2));
+    setVal('[data-k="opexEscal"]', 1.2); // 표시용 근사(항목별 실제 값은 프리셋 계산에 그대로 반영됨)
+    setVal('[data-k="decomEok"]', ref.results.철거비 / 100);
+    setVal('[data-k="depRatio"]', 95); setVal('[data-k="depYears"]', 20);
+    setVal('[data-k="lossRate"]', 80); setVal('[data-k="taxFlat"]', 21);
+    setVal('[data-k="dsraMonths"]', 6); setVal('[data-k="minCash"]', 10);
+    setVal('[data-k="divDSCR"]', 1.1); setVal('[data-k="divCumDSCR"]', 1.15);
+    setVal('[data-k="divStartYear"]', 2); setVal('[data-k="discount"]', 5.5);
+
+    buildSpendCurve();
+    ref.spendCurve_KRWm.forEach(function (v, i) {
+      var e = $('[data-spend="' + i + '"]'); if (e) e.value = (v / 100).toFixed(2);
+    });
+
+    var byName = {};
+    ref.tranches.forEach(function (t) { byName[t.name] = t; });
+    TRANCHES.forEach(function (tr) {
+      var t = byName[tr.name];
+      if (!t) return;
+      setVal('input[data-tr="' + tr.key + '"][data-f="amountEok"]', t.amount / 100);
+      setVal('input[data-tr="' + tr.key + '"][data-f="order"]', t.order);
+      setVal('input[data-tr="' + tr.key + '"][data-f="rateC"]', (t.rateCon * 100).toFixed(3));
+      setVal('input[data-tr="' + tr.key + '"][data-f="rateO"]', (t.rateOp * 100).toFixed(3));
+      setVal('input[data-tr="' + tr.key + '"][data-f="graceYears"]', t.graceYears);
+      setVal('input[data-tr="' + tr.key + '"][data-f="repayYears"]', t.repayYears);
+      var sel = $('select[data-tr="' + tr.key + '"]');
+      if (sel && t.method === 3 && !sel.querySelector('option[value="3"]')) {
+        sel.appendChild(new Option('64회차(당진 실측)', '3'));
+      }
+      if (sel) sel.value = String(t.method);
+    });
+
+    presetInp = buildDangjinInp(ref);
+    usingPreset = true;
+    suppressDirty = false;
+    toast('당진 FS 실측치를 불러왔습니다 — 이제 "생성"을 누르면 검증된 원본과 동일한 숫자가 나옵니다');
+  }
+
   var model = null;
   var f0 = function (n) { return Math.round(n).toLocaleString('ko-KR'); };
   var pct = function (n) { return n === null || n === undefined || isNaN(n) ? '—' : (n * 100).toFixed(2); };
@@ -179,29 +291,34 @@
   }
 
   function run() {
-    var core = readCore();
-    var tranches = readTranches();
-    var spendCurve = readSpendCurve();
-    var inp = Object.assign({}, core, {
-      ppy: 4,
-      capacityFactor: undefined, // dailyHours 우선 사용
-      spendCurve: spendCurve,
-      equityOrder: 1,
-      tranches: tranches.map(function (t) {
-        return {
-          name: t.name, amountEok: t.amountEok, order: t.order,
-          rateC: t.rateC, rateO: t.rateO, graceYears: t.graceYears, repayYears: t.repayYears,
-          method: t.method
-        };
-      }),
-      taxMode: 1,
-      localSurtaxRate: 10   // 한국 지방소득세(법인세의 10%)는 기본 적용
-    });
+    var inp;
+    if (usingPreset && presetInp) {
+      inp = presetInp;
+    } else {
+      var core = readCore();
+      var tranches = readTranches();
+      var spendCurve = readSpendCurve();
+      inp = Object.assign({}, core, {
+        ppy: 4,
+        capacityFactor: undefined, // dailyHours 우선 사용
+        spendCurve: spendCurve,
+        equityOrder: 1,
+        tranches: tranches.map(function (t) {
+          return {
+            name: t.name, amountEok: t.amountEok, order: t.order,
+            rateC: t.rateC, rateO: t.rateO, graceYears: t.graceYears, repayYears: t.repayYears,
+            method: t.method
+          };
+        }),
+        taxMode: 1,
+        localSurtaxRate: 10   // 한국 지방소득세(법인세의 10%)는 기본 적용
+      });
+    }
     try {
       model = M.computeModel(inp);
       renderKPIs();
       $('#xls').disabled = false;
-      toast('재무모델 생성 완료');
+      toast(usingPreset ? '당진 FS 실측치 기준으로 생성 완료 (원본과 검증된 값)' : '재무모델 생성 완료');
     } catch (e) {
       toast('생성 실패: ' + e.message);
       console.error(e);
@@ -233,4 +350,24 @@
   $('[data-k="capexEok"]').addEventListener('change', buildSpendCurve);
   $('#run').addEventListener('click', run);
   $('#xls').addEventListener('click', download);
+  $('#loadDangjin').addEventListener('click', loadDangjin);
+
+  // 프리셋 로드 후 사용자가 아무 값이나 직접 고치면 더는 "검증된 원본값"이
+  // 아니므로 usingPreset을 해제한다(다시 폼을 읽어서 계산하는 일반 경로로).
+  // 이때 "64회차(당진 실측)" 방식으로 남아있던 select는 일반 경로에서
+  // schedule 데이터가 없어 원금이 영원히 0으로 계산돼 결과가 깨지므로
+  // 방식 1(원금균등)로 되돌려준다.
+  function dropUnsupportedMethod3() {
+    document.querySelectorAll('select[data-tr]').forEach(function (sel) {
+      if (sel.value === '3') sel.value = '1';
+    });
+  }
+  document.addEventListener('input', function (e) {
+    if (suppressDirty || !usingPreset) return;
+    if (e.target.matches('[data-k],[data-tr],[data-spend]')) { usingPreset = false; dropUnsupportedMethod3(); }
+  });
+  document.addEventListener('change', function (e) {
+    if (suppressDirty || !usingPreset) return;
+    if (e.target.matches('[data-k],[data-tr],[data-spend]')) { usingPreset = false; dropUnsupportedMethod3(); }
+  });
 })();

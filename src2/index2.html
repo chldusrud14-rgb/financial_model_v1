@@ -82,7 +82,13 @@ table.tr th:first-child,table.tr td:first-child{text-align:left;font-weight:700}
 <div class="wrap">
   <div class="warnbox">
     이 화면은 기능 검증용 1차 버전입니다. 상환방식은 원금균등(1)/원리금균등(2)만 입력 가능하고,
-    64회차 직접 키인(방식 3)은 아직 화면에서 지원하지 않습니다(엔진은 지원 — <code>reference.json</code> 데이터로만 검증됨).
+    64회차 직접 키인(방식 3)은 아래 "당진 FS 불러오기"로만 채워집니다(직접 입력 UI는 아직 없음).
+    <b>아래 기본값(빈 폼)으로 그냥 생성을 누르면 당진 실측치와 다른 숫자가 나옵니다</b> —
+    당진 원본과 동일한 숫자를 보려면 반드시 "당진 FS 불러오기"를 먼저 누르세요.
+  </div>
+
+  <div class="chips" style="display:flex;gap:8px;margin-bottom:18px">
+    <button class="btn ghost" id="loadDangjin">당진 FS 불러오기 (원본 검증값)</button>
   </div>
 
   <div class="cols">
@@ -122,6 +128,7 @@ table.tr th:first-child,table.tr td:first-child{text-align:left;font-weight:700}
 </div>
 <div class="toast" id="toast"></div>
 
+<script>__DANGJIN_REF__</script>
 <script>__EXCELJS__</script>
 <script>__ENGINE2__</script>
 <script>__XLSX2__</script>

@@ -7,26 +7,59 @@ const w = dom.window;
 w.ExcelJS = require('exceljs');
 w.addEventListener('error', e => console.log('WINDOW ERROR:', e.message, e.error && e.error.stack));
 
+function fireClick(d, sel) { d.querySelector(sel).dispatchEvent(new w.Event('click', { bubbles: true })); }
+
 setTimeout(() => {
   const d = w.document;
+  console.log('=== 기본 폼(당진 프리셋 로드 전) ===');
   console.log('입력 필드(core):', d.querySelectorAll('[data-k]').length, '(기대 26)');
-  console.log('트랜치 입력:', d.querySelectorAll('[data-tr]').length, '(기대 5행*6필드=30)');
-  console.log('트랜치 방식 select:', d.querySelectorAll('select[data-tr]').length, '(기대 5)');
   console.log('공사비 지출곡선 입력:', d.querySelectorAll('[data-spend]').length);
 
-  d.querySelector('#run').dispatchEvent(new w.Event('click'));
+  fireClick(d, '#run');
   setTimeout(() => {
-    console.log('--- 생성 결과 ---');
-    const kpis = d.querySelectorAll('#kpis .kpi');
-    console.log('KPI 카드:', kpis.length);
-    kpis.forEach(k => console.log('  ', k.querySelector('.k').textContent, '=', k.querySelector('.v').textContent));
-    console.log('메타:', d.querySelector('#metaNote').textContent);
-    console.log('Excel 버튼 활성화:', !d.querySelector('#xls').disabled);
+    const genericKpis = {};
+    d.querySelectorAll('#kpis .kpi').forEach(k => { genericKpis[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
+    console.log('기본값 생성 결과(범용 근사, 원본과 다름):', genericKpis['Equity IRR (배당)'], genericKpis['최소 단순DSCR(연 합산)']);
 
-    d.querySelector('#xls').dispatchEvent(new w.Event('click'));
+    console.log('\n=== 당진 FS 불러오기 클릭 ===');
+    fireClick(d, '#loadDangjin');
     setTimeout(() => {
-      console.log('다운로드 클릭 후 버튼 텍스트:', d.querySelector('#xls').textContent);
-      console.log('테스트 종료(에러 없으면 정상)');
-    }, 600);
+      console.log('사업명:', d.querySelector('[data-k="projectName"]').value);
+      console.log('공사비 지출곡선(1분기):', d.querySelector('[data-spend="0"]').value, '(기대 348.70)');
+      console.log('선순위A 방식 select:', d.querySelector('select[data-tr="A"]').value, '(기대 3)');
+
+      fireClick(d, '#run');
+      setTimeout(() => {
+        console.log('\n=== 당진 프리셋 생성 결과 (test_ops.js 검증값과 대조) ===');
+        const kpis = {};
+        d.querySelectorAll('#kpis .kpi').forEach(k => { kpis[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
+        const expect = {
+          'Project IRR (세후)': '7.86', 'Equity IRR (FCFE)': '13.33', 'Equity IRR (배당)': '12.12',
+          'Investor IRR': '7.29', '최소 단순DSCR(연 합산)': '1.218', '최소 누적DSCR': '1.449'
+        };
+        let allOk = true;
+        Object.keys(expect).forEach(k => {
+          const got = kpis[k];
+          const ok = got && got.startsWith(expect[k].slice(0, 4));
+          if (!ok) allOk = false;
+          console.log((ok ? '  OK  ' : '  << ') + k + ': ' + got + ' (기대 ' + expect[k] + '대)');
+        });
+        console.log('\n' + (allOk ? '당진 프리셋 → 검증된 원본값과 일치' : '불일치 있음 — 위 << 확인'));
+
+        console.log('\n=== 프리셋 로드 후 값 수정 시 usingPreset 해제 확인 ===');
+        const cap = d.querySelector('[data-k="capacityMW"]');
+        cap.value = '50';
+        cap.dispatchEvent(new w.Event('input', { bubbles: true }));
+        fireClick(d, '#run');
+        setTimeout(() => {
+          const kpis2 = {};
+          d.querySelectorAll('#kpis .kpi').forEach(k => { kpis2[k.querySelector('.k').textContent] = k.querySelector('.v').textContent; });
+          console.log('용량 50MW(부채는 원래 규모 그대로라 과중) 재생성 결과 전체:');
+          Object.keys(kpis2).forEach(k => console.log('  ', k, '=', kpis2[k]));
+          console.log('토스트 메시지:', d.querySelector('#toast').textContent);
+          console.log('\n테스트 종료(WINDOW ERROR 없으면 정상)');
+        }, 200);
+      }, 200);
+    }, 200);
   }, 200);
 }, 200);
