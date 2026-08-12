@@ -87,6 +87,8 @@ table.tr .rm:hover{background:#FBF3EC;border-color:#EBD3BB}
 .btn:hover{background:#0F3A2D}
 .btn.ghost{background:#fff;color:var(--ink2);border:1px solid var(--line);font-size:12px;padding:9px 14px;font-weight:700}
 .btn.ghost:hover{background:#F7FAF9;border-color:#CFDCD7}
+.btn.accent{background:var(--accent);color:#fff}
+.btn.accent:hover{background:#3F8A6C}
 .btn[disabled]{opacity:.55;cursor:progress}
 
 /* 오른쪽 컬럼(생성 버튼+결과)을 스크롤해도 항상 보이게 고정 —
@@ -99,30 +101,34 @@ table.tr .rm:hover{background:#FBF3EC;border-color:#EBD3BB}
 @keyframes pulseGlow{0%,100%{box-shadow:0 4px 16px rgba(20,72,58,.28)}50%{box-shadow:0 4px 22px rgba(46,125,98,.55)}}
 @media (max-width:980px){.rcol{position:static}}
 
-.kpis{display:grid;grid-template-columns:repeat(2,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;box-shadow:var(--sh)}
-.kpi{padding:14px 16px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;transition:background .15s}
-.kpi:nth-child(2n){border-right:0}
-.kpi:hover{background:#FAFCFB}
-.kpi .k{font-size:11px;font-weight:700;color:var(--muted)}
-.kpi .v{font-size:21px;font-weight:800;letter-spacing:-.5px;margin-top:4px;color:var(--ink)}
-.kpi .v em{font-size:12px;font-style:normal;font-weight:700;color:var(--ink2);margin-left:2px}
+/* 결과 패널 — 그리드 선으로 나뉜 표 느낌 대신, 각 지표를 독립된
+   미니 카드로 띄워서 여백으로 구분한다(줄 많은 스프레드시트 느낌 회피). */
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.kpi{padding:13px 14px;background:#FBFCFC;border:1px solid var(--line);border-radius:10px;transition:box-shadow .15s,border-color .15s,background .15s}
+.kpi:hover{background:#fff;box-shadow:0 3px 10px rgba(15,46,36,.06);border-color:#D8E4DF}
+.kpi .k{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .v{font-size:19px;font-weight:800;letter-spacing:-.4px;margin-top:5px;color:var(--ink)}
+.kpi .v em{font-size:11.5px;font-style:normal;font-weight:700;color:var(--ink2);margin-left:2px}
 .kpi .n2{font-size:10px;color:var(--muted);margin-top:5px;line-height:1.4}
+.kpi.bad{background:#FDF6F4;border-color:#F3DAD3}
 .kpi.bad .v{color:var(--bad)}
+.kpi.warn{background:#FDF8F1;border-color:#F3E1C6}
 .kpi.warn .v{color:var(--warn)}
+.kpi.good{background:#F3F9F6;border-color:#CFE7DA}
 .kpi.good .v{color:var(--good)}
-#kpis .grp{margin-bottom:18px}
-#kpis .grp:last-child{margin-bottom:0}
-#kpis .grp>b{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.06em;color:var(--brand-d);margin-bottom:9px;font-weight:800;text-transform:uppercase}
+#kpis .grp{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--line)}
+#kpis .grp:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0}
+#kpis .grp>b{display:flex;align-items:center;gap:7px;font-size:10.5px;letter-spacing:.07em;color:var(--brand-d);margin-bottom:10px;font-weight:800;text-transform:uppercase}
 #kpis .grp>b::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--brand);flex:0 0 7px}
 
 /* 히어로 카드 — 사업자가 가장 먼저 보고 싶어할 실수령 배당 IRR */
 .kpiHero{background:linear-gradient(135deg,var(--brand-d),var(--deep2) 70%);color:#fff;border-radius:14px;
-  padding:20px 22px;margin-bottom:18px;box-shadow:0 8px 24px rgba(15,46,36,.22)}
+  padding:22px 24px;margin-bottom:14px;box-shadow:0 8px 24px rgba(15,46,36,.22)}
 .kpiHero .hk{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
-.kpiHero .hv{font-size:40px;font-weight:800;letter-spacing:-1px;margin-top:4px;line-height:1}
+.kpiHero .hv{font-size:44px;font-weight:800;letter-spacing:-1px;margin-top:6px;line-height:1}
 .kpiHero .hv.bad{color:#FFB4A8}
-.kpiHero .hv em{font-size:16px;font-style:normal;font-weight:700;opacity:.85;margin-left:3px}
-.kpiHero .hsub{font-size:11.5px;opacity:.82;margin-top:10px;line-height:1.5}
+.kpiHero .hv em{font-size:17px;font-style:normal;font-weight:700;opacity:.85;margin-left:3px}
+.kpiHero .hsub{font-size:11.5px;opacity:.82;margin-top:12px;line-height:1.6;padding-top:12px;border-top:1px solid rgba(255,255,255,.18)}
 
 .note{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
 .warnbox{background:#FBF3EC;border:1px solid #EBD3BB;color:#8A5225;border-radius:10px;padding:11px 13px;font-size:12px;margin-bottom:14px}
@@ -158,19 +164,7 @@ table.tr .rm:hover{background:#FBF3EC;border-color:#EBD3BB}
       </div>
 
       <div class="card">
-        <div class="hd"><span class="badge">2</span><h4>차입 트랜치 (자본금 + 선순위 A~D + 후순위)</h4></div>
-        <div class="hint">보통 선순위 트랜치 1~2개만 채우고 나머지는 금액 0으로 두면 됩니다. "투입순서"가 같은 트랜치는 금액 비례로 동시에 인출됩니다.</div>
-        <div class="body">
-          <div id="trbox"></div>
-          <div class="trlegend">
-            <b>투입순서</b>: 숫자가 작을수록 먼저 인출(1=가장 먼저) · <b>거치</b>: 원금 상환 없이 이자만 내는 기간(년) ·
-            <b>상환</b>: 거치 이후 원금을 갚아나가는 기간(년) · <b>방식</b>: 원금균등(매기 동일 원금) / 원리금균등(매기 동일 총상환액)
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="hd"><span class="badge">3</span><h4>사업자 구성 (지분)</h4>
+        <div class="hd"><span class="badge">2</span><h4>사업자 구성 (지분)</h4>
           <button class="btn ghost" id="shAdd" style="margin-left:auto">+ 출자자 추가</button>
         </div>
         <div class="hint">자본금(자본금 항목의 총액)을 여러 출자자가 나눠 낼 때 이름과 지분율을 입력합니다. 지분율 합은 100%여야 하고, 모든 출자자는 각자 지분율만큼 자본금 납입·배당 수령을 동일한 타이밍에 비례로 나눠 갖는다고 가정합니다.</div>
@@ -181,7 +175,7 @@ table.tr .rm:hover{background:#FBF3EC;border-color:#EBD3BB}
       </div>
 
       <div class="card">
-        <div class="hd"><span class="badge">4</span><h4>공사비 지출 곡선</h4>
+        <div class="hd"><span class="badge">3</span><h4>공사비 지출 곡선</h4>
           <button class="btn ghost" id="spendReset" style="margin-left:auto">균등분배로 재설정</button>
         </div>
         <div class="hint">공사기간(분기)마다 실제 얼마씩 돈이 나가는지 입력합니다. 보통 공사 초반·후반에 몰리는데, 잘 모르면 균등분배로 두면 됩니다. DSRA는 준공분기에 별도로 조달돼서 여기 포함 안 합니다.</div>
@@ -192,13 +186,27 @@ table.tr .rm:hover{background:#FBF3EC;border-color:#EBD3BB}
       </div>
 
       <div class="card">
+        <div class="hd"><span class="badge">4</span><h4>차입 트랜치 (자본금 + 선순위 A~D + 후순위)</h4>
+          <button class="btn ghost" id="trQuick" style="margin-left:auto">간편설정(선순위A 하나로)</button>
+        </div>
+        <div class="hint">보통 선순위 트랜치 1~2개만 채우고 나머지는 금액 0으로 두면 됩니다. "투입순서"가 같은 트랜치는 금액 비례로 동시에 인출됩니다. 트랜치 조건을 잘 모르면 "간편설정"으로 부채 전액을 표준 조건 하나로 묶어서 대략적인 결과부터 볼 수 있습니다.</div>
+        <div class="body">
+          <div id="trbox"></div>
+          <div class="trlegend">
+            <b>투입순서</b>: 숫자가 작을수록 먼저 인출(1=가장 먼저) · <b>거치</b>: 원금 상환 없이 이자만 내는 기간(년) ·
+            <b>상환</b>: 거치 이후 원금을 갚아나가는 기간(년) · <b>방식</b>: 원금균등(매기 동일 원금) / 원리금균등(매기 동일 총상환액)
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="hd"><span class="badge">5</span><h4>민감도 분석</h4>
           <button class="btn ghost" id="sensAdd" style="margin-left:auto">+ 시나리오 추가</button>
         </div>
         <div class="hint">판매단가·총투자비·운영비·이자율을 시나리오별로 조정해서 핵심 지표가 어떻게 바뀌는지 비교합니다. <b>"당진 FS 불러오기"로 채운 상태에서는 실측치가 고정돼 있어 민감도 분석이 의미 없습니다</b> — 일반 입력(프리셋 미사용) 상태에서만 쓰세요.</div>
         <div class="body">
           <div id="sensBox"></div>
-          <button class="btn ghost" id="sensRun" style="margin-top:12px">민감도 분석 실행</button>
+          <button class="btn accent" id="sensRun" style="margin-top:12px;width:100%">민감도 분석 실행</button>
           <div id="sensResults"></div>
         </div>
       </div>
@@ -216,7 +224,7 @@ table.tr .rm:hover{background:#FBF3EC;border-color:#EBD3BB}
           <button class="btn ghost" id="xls" style="margin-left:auto" disabled>Excel 다운로드</button>
         </div>
         <div class="body">
-          <div class="kpis" id="kpis"></div>
+          <div id="kpis"></div>
           <div class="note" id="metaNote"></div>
           <div id="shResults"></div>
         </div>

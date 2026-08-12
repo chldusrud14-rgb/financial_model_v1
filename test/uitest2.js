@@ -12,7 +12,7 @@ function fireClick(d, sel) { d.querySelector(sel).dispatchEvent(new w.Event('cli
 setTimeout(() => {
   const d = w.document;
   console.log('=== 기본 폼(당진 프리셋 로드 전) ===');
-  console.log('입력 필드(core):', d.querySelectorAll('[data-k]').length, '(기대 30)');
+  console.log('입력 필드(core):', d.querySelectorAll('[data-k]').length, '(기대 31)');
   console.log('공사비 지출곡선 입력:', d.querySelectorAll('[data-spend]').length);
 
   fireClick(d, '#run');

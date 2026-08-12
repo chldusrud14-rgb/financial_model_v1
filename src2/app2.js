@@ -16,7 +16,11 @@
       hint: 'PPA·SMP+REC 등 여러 단가를 물량가중평균한 값' },
     { k: 'capexEok', label: '총사업비(건설이자 제외)', type: 'number', def: 1410.69, unit: '억원', essential: true,
       hint: 'EPC·인허가·개발비 등 순수 공사비 합계 — 건설이자(IDC)는 여기 포함 안 함, 자동 계산됨' },
-    { k: 'equityEok', label: '자본금', type: 'number', def: 150, unit: '억원', essential: true },
+    { k: 'opexEok', label: '운영비(1년차 기준)', type: 'number', def: 49.8, unit: '억원/yr', essential: true },
+    { k: 'equityEok', label: '자본금(Equity)', type: 'number', def: 150, unit: '억원', essential: true,
+      hint: '전체 출자자의 출자금 합계(Equity 총액)입니다 — 개별 출자자 지분율은 아래 "사업자 구성"에서 나눕니다.' },
+    { k: 'equityRatioPct', label: '자기자본비율(선택)', type: 'number', def: '', unit: '%', essential: true, uiOnly: true,
+      hint: '입력하면 총사업비 대비 비율로 자본금을 자동 계산합니다(비워두면 위 자본금 절대값을 그대로 씀). 자본금을 직접 고치면 이 값도 같이 갱신됩니다.' },
 
     { k: 'degradation', label: '연간 출력저하(Degradation)', type: 'number', def: 0.5, unit: '%/yr', group: '발전소 특성',
       hint: '매년 정액으로 발전량이 이만큼씩 줄어든다고 가정 (복리 아님)' },
@@ -42,7 +46,6 @@
     { k: 'recWeight', label: 'REC 가중치', type: 'number', def: 1, unit: '배', group: '매출',
       hint: '설비용량 구간별 REC 가중치. RPS 비중이 0(전량 PPA)이면 의미가 없어 자동으로 1로 고정되고 입력이 잠깁니다.' },
 
-    { k: 'opexEok', label: '운영비(1년차 기준)', type: 'number', def: 49.8, unit: '억원/yr', group: '운영비' },
     { k: 'opexEscal', label: '운영비 상승률', type: 'number', def: 0.7, unit: '%/yr', group: '운영비' },
     { k: 'decomEok', label: '철거·복구비(만기 시점)', type: 'number', def: 20, unit: '억원', group: '운영비' },
 
@@ -99,10 +102,26 @@
     return wrapf;
   }
 
+  // 필수 입력 배치 — 자동 2열 순서채움 대신 명시적으로 행을 지정해서
+  // "총사업비+운영비", "자본금+자기자본비율"이 나란히 붙게 한다.
+  var ESSENTIAL_ROWS = [
+    ['projectName'],
+    ['capacityMW', 'dailyHours'],
+    ['tariff'],
+    ['capexEok', 'opexEok'],
+    ['equityEok', 'equityRatioPct']
+  ];
+  function fieldByKey(k) { return CORE.filter(function (d) { return d.k === k; })[0]; }
+
   function buildCore() {
     var wrap = $('#core');
     var essential = el('div', 'grid');
-    CORE.filter(function (d) { return d.essential; }).forEach(function (d) { essential.appendChild(fieldEl(d)); });
+    ESSENTIAL_ROWS.forEach(function (row) {
+      row.forEach(function (k) {
+        var d = fieldByKey(k);
+        if (d) essential.appendChild(fieldEl(d));
+      });
+    });
     wrap.appendChild(essential);
 
     // 그룹별로 묶어서 "상세 가정" 접힘 영역에 — 26개를 한 화면에 쭉 나열하지 않는다.
@@ -169,6 +188,30 @@
     });
     t.appendChild(tb);
     box.appendChild(t);
+  }
+
+  // 트랜치 조건을 몰라도(또는 대략적인 민감도 확인만 하고 싶을 때) 쓰는
+  // 간편설정 — 부채 전액(총사업비-자본금 추정)을 선순위A 하나로 몰아넣고
+  // 나머지는 0으로 비워서 표준적인 조건(5.5%/5.5%, 거치2년, 상환15년,
+  // 원금균등)으로 즉시 계산 가능하게 만든다. 스프레드곡선의
+  // "균등분배로 재설정"과 같은 성격의 단순화 버튼.
+  function quickFillTranches() {
+    var capex = Number($('[data-k="capexEok"]').value) || 0;
+    var equity = Number($('[data-k="equityEok"]').value) || 0;
+    var debt = Math.max(0, capex - equity);
+    var std = { rateC: 5.5, rateO: 5.5, graceYears: 2, repayYears: 15, method: 1 };
+    TRANCHES.forEach(function (tr, idx) {
+      var amt = idx === 0 ? debt : 0;
+      setVal('input[data-tr="' + tr.key + '"][data-f="amountEok"]', amt);
+      setVal('input[data-tr="' + tr.key + '"][data-f="order"]', 1);
+      setVal('input[data-tr="' + tr.key + '"][data-f="rateC"]', std.rateC);
+      setVal('input[data-tr="' + tr.key + '"][data-f="rateO"]', std.rateO);
+      setVal('input[data-tr="' + tr.key + '"][data-f="graceYears"]', std.graceYears);
+      setVal('input[data-tr="' + tr.key + '"][data-f="repayYears"]', std.repayYears);
+      setVal('select[data-tr="' + tr.key + '"]', std.method);
+    });
+    if (usingPreset) { usingPreset = false; }
+    toast('부채 전액(' + f0(debt) + '억원 추정)을 선순위A 하나로 단순화했습니다 — 필요하면 표에서 직접 조정하세요');
   }
 
   /* ---------- 사업자(출자자) 구성 ----------
@@ -413,6 +456,19 @@
     });
     return inp;
   }
+
+  // 자본금(절대값) ↔ 자기자본비율(%, 총사업비 대비) 양방향 동기화.
+  // fromRatio=true면 비율→자본금, false면 자본금→비율로 갱신한다.
+  function syncEquityRatio(fromRatio) {
+    var capexEl = $('[data-k="capexEok"]'), eqEl = $('[data-k="equityEok"]'), ratioEl = $('[data-k="equityRatioPct"]');
+    if (!capexEl || !eqEl || !ratioEl) return;
+    var capex = Number(capexEl.value) || 0;
+    if (fromRatio) {
+      if (ratioEl.value !== '' && capex > 0) eqEl.value = (capex * Number(ratioEl.value) / 100).toFixed(2);
+    } else {
+      if (capex > 0) ratioEl.value = (Number(eqEl.value) / capex * 100).toFixed(2);
+    }
+  }
   function readTranches() {
     return TRANCHES.map(function (tr) {
       var o = { name: tr.name, method: Number($('select[data-tr="' + tr.key + '"]').value) };
@@ -510,6 +566,7 @@
     setVal('[data-k="dsraMonths"]', 6); setVal('[data-k="minCash"]', 10);
     setVal('[data-k="divDSCR"]', 1.1); setVal('[data-k="divCumDSCR"]', 1.15);
     setVal('[data-k="divStartYear"]', 2); setVal('[data-k="discount"]', 5.5);
+    syncEquityRatio(false); // 참고용 — 실제 계산은 presetInp를 그대로 씀, 이 필드는 표시만
 
     buildSpendCurve();
     ref.spendCurve_KRWm.forEach(function (v, i) {
@@ -712,9 +769,13 @@
   buildShareholderGrid();
   buildSpendCurve();
   updateRecWeightState();
+  $('#trQuick').addEventListener('click', quickFillTranches);
   $('[data-k="rpsShare"]').addEventListener('input', updateRecWeightState);
   $('[data-k="constructionMonths"]').addEventListener('change', buildSpendCurve);
   $('[data-k="capexEok"]').addEventListener('change', buildSpendCurve);
+  $('[data-k="capexEok"]').addEventListener('input', function () { if ($('[data-k="equityRatioPct"]').value !== '') syncEquityRatio(true); });
+  $('[data-k="equityEok"]').addEventListener('input', function () { syncEquityRatio(false); });
+  $('[data-k="equityRatioPct"]').addEventListener('input', function () { syncEquityRatio(true); });
   $('#spendReset').addEventListener('click', buildSpendCurve);
   $('#spendbox').addEventListener('input', updateSpendSum);
   $('#shAdd').addEventListener('click', function () {
