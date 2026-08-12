@@ -84,6 +84,16 @@ table.tr td input:focus,table.tr td select:focus{border-color:var(--brand);box-s
 .btn.ghost:hover{background:#F7FAF9;border-color:#CFDCD7}
 .btn[disabled]{opacity:.55;cursor:progress}
 
+/* 오른쪽 컬럼(생성 버튼+결과)을 스크롤해도 항상 보이게 고정 —
+   왼쪽 입력폼이 길어서 버튼이 맨 아래로 밀려 안 보이는 문제 해결 */
+.rcol{position:sticky;top:20px;align-self:start}
+.btn.runbtn{width:100%;flex-direction:column;gap:2px;padding:16px 20px;margin-bottom:16px;font-size:15px;
+  box-shadow:0 4px 16px rgba(20,72,58,.28);animation:pulseGlow 2.4s ease-in-out infinite}
+.btn.runbtn em{font-style:normal;font-weight:600;font-size:11px;opacity:.85}
+.btn.runbtn:hover{animation:none}
+@keyframes pulseGlow{0%,100%{box-shadow:0 4px 16px rgba(20,72,58,.28)}50%{box-shadow:0 4px 22px rgba(46,125,98,.55)}}
+@media (max-width:980px){.rcol{position:static}}
+
 .kpis{display:grid;grid-template-columns:repeat(2,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .kpi{padding:14px 16px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff}
 .kpi:nth-child(2n){border-right:0}
@@ -158,10 +168,14 @@ table.tr td input:focus,table.tr td select:focus{border-color:var(--brand);box-s
         </div>
       </div>
 
-      <button class="btn" id="run" style="width:100%">재무모델 생성</button>
     </div>
 
-    <div>
+    <div class="rcol">
+      <button class="btn runbtn" id="run">
+        <span>재무모델 생성</span>
+        <em>← 왼쪽 입력값으로 아래에 결과가 계산됩니다</em>
+      </button>
+
       <div class="card">
         <div class="hd"><h4>생성 결과</h4>
           <button class="btn ghost" id="xls" style="margin-left:auto" disabled>Excel 다운로드</button>
