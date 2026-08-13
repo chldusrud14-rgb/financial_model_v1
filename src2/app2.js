@@ -119,10 +119,17 @@
     var wrap = $('#core');
     var essential = el('div', 'grid');
     ESSENTIAL_ROWS.forEach(function (row) {
+      var colsUsed = 0;
       row.forEach(function (k) {
         var d = fieldByKey(k);
-        if (d) essential.appendChild(fieldEl(d));
+        if (!d) return;
+        essential.appendChild(fieldEl(d));
+        colsUsed += d.type === 'text' ? 2 : 1; // text 필드는 .full로 2칸 다 씀
       });
+      // 2칸 그리드는 자식을 그냥 순서대로 채우기 때문에, 한 칸만 쓴 행은
+      // 빈 칸을 하나 더 넣어줘야 다음 행이 새 줄에서 시작한다(안 그러면
+      // 다음 행 첫 필드가 이 행의 남은 칸에 끼어들어가 버림).
+      if (colsUsed === 1) essential.appendChild(el('div'));
     });
     wrap.appendChild(essential);
 
