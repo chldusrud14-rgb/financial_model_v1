@@ -154,14 +154,16 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
 
 <div class="wrap">
   <div class="warnbox">
-    이 화면은 기능 검증용 1차 버전입니다. 상환방식은 원금균등(1)/원리금균등(2)만 입력 가능하고,
-    64회차 직접 키인(방식 3)은 아래 "당진 FS 불러오기"로만 채워집니다(직접 입력 UI는 아직 없음).
-    <b>아래 기본값(빈 폼)으로 그냥 생성을 누르면 당진 실측치와 다른 숫자가 나옵니다</b> —
-    당진 원본과 동일한 숫자를 보려면 반드시 "당진 FS 불러오기"를 먼저 누르세요.
+    이 화면은 기능 검증용 1차 버전입니다. 상환방식은 원금균등(1)/원리금균등(2)만 입력 가능합니다.
   </div>
 
-  <div class="chips" style="display:flex;gap:8px;margin-bottom:18px">
-    <button class="btn ghost" id="loadDangjin">당진 FS 불러오기 (원본 검증값)</button>
+  <div id="adminPresetBlock" style="display:none;flex-direction:column;gap:10px;margin-bottom:18px">
+    <div class="warnbox" style="margin-bottom:0">
+      64회차 직접 키인(방식 3)은 아래 "당진 FS 불러오기"로만 채워집니다(직접 입력 UI는 아직 없음).
+      기본값(빈 폼)으로 그냥 생성을 누르면 당진 실측치와 다른 숫자가 나옵니다 — 당진 원본과 동일한
+      숫자를 보려면 반드시 "당진 FS 불러오기"를 먼저 누르세요.
+    </div>
+    <button class="btn ghost" id="loadDangjin" style="align-self:flex-start">당진 FS 불러오기 (원본 검증값)</button>
   </div>
 
   <div class="cols">
@@ -211,7 +213,9 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
         <div class="hd"><span class="badge">5</span><h4>민감도 분석</h4>
           <button class="btn ghost" id="sensAdd" style="margin-left:auto">+ 시나리오 추가</button>
         </div>
-        <div class="hint">Base는 위 "사업 기본 가정" 값을 그대로 참조하는 기준행 — <b>불러오기</b> 버튼으로 그 순간의 입력값을 채웁니다. Case는 판매단가·총사업비·운영비·금리를 직접 입력해서 Base와 비교하는 행이고, 더 필요하면 "+ 시나리오 추가"로 늘리면 됩니다. <b>"당진 FS 불러오기"로 채운 상태에서는 실측치가 고정돼 있어 민감도 분석이 의미 없습니다</b> — 일반 입력(프리셋 미사용) 상태에서만 쓰세요.</div>
+        <div class="hint">Base는 위 "사업 기본 가정" 값을 그대로 참조하는 기준행 — <b>불러오기</b> 버튼으로 그 순간의 입력값을 채웁니다. Case는 판매단가·총사업비·운영비·금리를 직접 입력해서 Base와 비교하는 행이고, 더 필요하면 "+ 시나리오 추가"로 늘리면 됩니다.
+          <span id="adminSensHint" style="display:none"><b>"당진 FS 불러오기"로 채운 상태에서는 실측치가 고정돼 있어 민감도 분석이 의미 없습니다</b> — 일반 입력(프리셋 미사용) 상태에서만 쓰세요.</span>
+        </div>
         <div class="body">
           <div id="sensBox"></div>
           <button class="btn accent" id="sensRun" style="margin-top:12px;width:100%">민감도 분석 실행</button>

@@ -813,6 +813,14 @@
     });
   }
 
+  // 당진 FS 프리셋 버튼은 "엔진 검증용" 기능이라 일반 사용자에게는
+  // 혼란만 준다는 피드백으로 기본 숨김 처리 — URL에 ?admin을 붙이면
+  // (예: 파일명.html?admin) 버튼과 관련 설명이 다시 보인다.
+  if (/[?&]admin(=|&|$)/.test(location.search)) {
+    var presetBlock = $('#adminPresetBlock'); if (presetBlock) presetBlock.style.display = 'flex';
+    var sensHint = $('#adminSensHint'); if (sensHint) sensHint.style.display = 'inline';
+  }
+
   buildCore();
   buildTrancheGrid();
   buildShareholderGrid();
