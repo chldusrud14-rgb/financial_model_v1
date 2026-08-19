@@ -15,8 +15,11 @@
     { k: 'tariff', label: 'PPA 또는 SMP+REC 판매단가', type: 'number', def: 154.8, unit: '원/kWh', essential: true,
       hint: 'PPA·SMP+REC 등 여러 단가를 물량가중평균한 값' },
     { k: 'capexEok', label: '총사업비(건설이자 제외)', type: 'number', def: 1410.69, unit: '억원', essential: true,
-      hint: 'EPC·인허가·개발비 등 순수 공사비 합계 — 건설이자(IDC)는 여기 포함 안 함, 자동 계산됨' },
-    { k: 'opexEok', label: '운영비(1년차 기준)', type: 'number', def: 49.8, unit: '억원/yr', essential: true },
+      toggle: { id: 'capexDetailToggle', label: '항목별 입력' },
+      hint: 'EPC·인허가·개발비 등 순수 공사비 합계 — 건설이자(IDC)는 여기 포함 안 함, 자동 계산됨. 항목별 금액을 모르면 체크하지 말고 합계만 입력(빠른 사업성 검토용) — 체크하면 아래 항목 표가 나타나고 이 필드는 항목 합계로 자동 계산됩니다.' },
+    { k: 'opexEok', label: '운영비(1년차 기준)', type: 'number', def: 49.8, unit: '억원/yr', essential: true,
+      toggle: { id: 'opexDetailToggle', label: '항목별 입력' },
+      hint: '항목별 금액을 모르면 체크하지 말고 합계만 입력하세요. 체크하면 항목별 상승률·선순위/후순위까지 반영돼서 계산 정확도가 올라갑니다(총액 근사 대신 항목별 계산 사용).' },
     { k: 'equityEok', label: '자본금(Equity)', type: 'number', def: 150, unit: '억원', essential: true,
       hint: '전체 출자자의 출자금 합계(Equity 총액)입니다 — 개별 출자자 지분율은 아래 "사업자 구성"에서 나눕니다.' },
     { k: 'equityRatioPct', label: '자기자본비율(선택)', type: 'number', def: '', unit: '%', essential: true, uiOnly: true,
@@ -115,7 +118,20 @@
 
   function fieldEl(d) {
     var wrapf = el('div', 'f' + (d.type === 'text' ? ' full' : ''));
-    wrapf.appendChild(el('label', null, d.label));
+    if (d.toggle) {
+      var labelRow = el('div', 'flabel');
+      labelRow.appendChild(el('label', null, d.label));
+      var tg = document.createElement('label');
+      tg.className = 'ftoggle';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.id = d.toggle.id;
+      tg.appendChild(cb);
+      tg.appendChild(document.createTextNode(' ' + d.toggle.label));
+      labelRow.appendChild(tg);
+      wrapf.appendChild(labelRow);
+    } else {
+      wrapf.appendChild(el('label', null, d.label));
+    }
     var inw = el('div', 'in2');
     var input = document.createElement('input');
     input.type = d.type === 'text' ? 'text' : 'number';
@@ -155,6 +171,17 @@
       // 빈 칸을 하나 더 넣어줘야 다음 행이 새 줄에서 시작한다(안 그러면
       // 다음 행 첫 필드가 이 행의 남은 칸에 끼어들어가 버림).
       if (colsUsed === 1) essential.appendChild(el('div'));
+      // 총사업비/운영비 항목별 입력 표는 해당 필드 바로 아래(체크박스가
+      // 그 필드 라벨 옆에 있으니 표도 그 자리에 붙어야 자연스럽다) —
+      // 전체 폭으로 한 줄 차지.
+      if (row.indexOf('capexEok') >= 0) {
+        var capexBox = el('div', 'itemBox full'); capexBox.id = 'capexItemBox'; capexBox.style.display = 'none';
+        essential.appendChild(capexBox);
+      }
+      if (row.indexOf('opexEok') >= 0) {
+        var opexBox = el('div', 'itemBox full'); opexBox.id = 'opexItemBox'; opexBox.style.display = 'none';
+        essential.appendChild(opexBox);
+      }
     });
     wrap.appendChild(essential);
 
@@ -181,27 +208,6 @@
     });
     det.appendChild(body2);
     wrap.appendChild(det);
-
-    // 총사업비/운영비 항목별 입력 토글 — 위 필수 입력의 "총사업비"/"운영비"
-    // 합계 필드 바로 아래에 둔다.
-    wrap.appendChild(itemToggleBlock('capex', '총사업비를 항목별로 입력', '항목별 금액을 모르면 체크하지 말고 위 "총사업비" 합계만 입력하세요 — 빠른 사업성 검토용. 체크하면 위 필드는 항목 합계로 자동 계산됩니다.'));
-    wrap.appendChild(itemToggleBlock('opex', '운영비를 항목별로 입력', '항목별 금액을 모르면 체크하지 말고 위 "운영비" 합계만 입력하세요. 체크하면 항목별 상승률·선순위/후순위까지 반영돼서 계산 정확도가 올라갑니다(총액 근사 대신 항목별 계산 사용).'));
-  }
-
-  function itemToggleBlock(kind, label2, hint) {
-    var wrap = el('div', 'itemToggle');
-    var lab = document.createElement('label');
-    var cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.id = kind + 'DetailToggle';
-    lab.appendChild(cb);
-    lab.appendChild(document.createTextNode(' ' + label2));
-    wrap.appendChild(lab);
-    wrap.appendChild(el('div', 'fhint', hint));
-    var box = el('div', 'itemBox');
-    box.id = kind + 'ItemBox';
-    box.style.display = 'none';
-    wrap.appendChild(box);
-    return wrap;
   }
 
   function capexItemRow(it, idx) {

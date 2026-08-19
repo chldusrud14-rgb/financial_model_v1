@@ -44,12 +44,14 @@ button,input,select{font-family:inherit;font-size:inherit;color:inherit}
 .full{grid-column:1/-1}
 .f input[readonly]{background:var(--brand-l);color:var(--brand-d);cursor:not-allowed}
 
-/* 총사업비/운영비 항목별 입력 토글 */
-.itemToggle{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
-.itemToggle>label{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer}
-.itemToggle>label input{width:auto}
-.itemToggle .fhint{margin:5px 0 0 22px}
-.itemBox{margin-top:10px}
+/* 필드 라벨 옆에 붙는 "항목별 입력" 체크박스(총사업비/운영비) */
+.flabel{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.flabel label{margin-bottom:0}
+.f .ftoggle{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:var(--brand-d);cursor:pointer;white-space:nowrap}
+.f .ftoggle input{width:auto;cursor:pointer}
+
+/* 총사업비/운영비 항목별 입력 표 */
+.itemBox{margin-top:2px;padding-top:12px}
 .itemBox table.tr{width:100%}
 .itemBox .spendsum{margin-top:8px}
 
