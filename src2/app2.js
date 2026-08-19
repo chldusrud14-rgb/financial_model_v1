@@ -171,15 +171,17 @@
       // 빈 칸을 하나 더 넣어줘야 다음 행이 새 줄에서 시작한다(안 그러면
       // 다음 행 첫 필드가 이 행의 남은 칸에 끼어들어가 버림).
       if (colsUsed === 1) essential.appendChild(el('div'));
-      // 총사업비/운영비 항목별 입력 표는 해당 필드 바로 아래 줄에 — 전체
-      // 폭 하나로 겹쳐 쌓이지 않게, 위 필드들처럼 반반(1칸씩) 나눠서
-      // 나란히 배치한다(둘 다 켜면 좌우로 같이 보임).
+      // 총사업비/운영비 항목별 입력 표는 해당 필드 바로 아래 줄에 — 위
+      // 필드들처럼 반반(1칸씩) 나눠서 나란히 배치한다. display:none으로
+      // 숨기면 그리드 흐름에서 아예 빠져버려 다음 필드(자본금)가 옆으로
+      // 끌려오는 버그가 있어서, 항상 그리드에 남겨두고 내용만 비워둔다
+      // (비어있으면 CSS로 높이 0 처리 — .itemBox:empty 참고).
       if (row.indexOf('capexEok') >= 0) {
-        var capexBox = el('div', 'itemBox'); capexBox.id = 'capexItemBox'; capexBox.style.display = 'none';
+        var capexBox = el('div', 'itemBox'); capexBox.id = 'capexItemBox';
         essential.appendChild(capexBox);
       }
       if (row.indexOf('opexEok') >= 0) {
-        var opexBox = el('div', 'itemBox'); opexBox.id = 'opexItemBox'; opexBox.style.display = 'none';
+        var opexBox = el('div', 'itemBox'); opexBox.id = 'opexItemBox';
         essential.appendChild(opexBox);
       }
     });
@@ -279,13 +281,17 @@
     }
   }
 
+  // box를 display:none으로 숨기면 CSS 그리드 배치에서 그 자리가 통째로
+  // 빠져버려서(그리드는 display:none 요소를 아예 없는 것처럼 취급),
+  // 바로 다음 필드(자본금)가 옆 칸(운영비 표 자리)으로 끌려 올라오는
+  // 버그가 있었다 — 항상 그리드 흐름에는 남겨두고, 안 켰을 때는
+  // 내용만 비워서 높이가 0에 가깝게 만드는 방식으로 고친다.
   function toggleCapexDetail(on) {
     capexDetailOn = on;
-    var box = $('#capexItemBox');
     var capexEl = $('[data-k="capexEok"]');
-    if (box) box.style.display = on ? 'block' : 'none';
     if (capexEl) capexEl.readOnly = on;
     if (on) { buildCapexItemGrid(); updateCapexItemSum(); }
+    else { var box = $('#capexItemBox'); if (box) box.innerHTML = ''; }
   }
 
   function opexItemRow(it, idx) {
@@ -374,11 +380,10 @@
 
   function toggleOpexDetail(on) {
     opexDetailOn = on;
-    var box = $('#opexItemBox');
     var opexEl = $('[data-k="opexEok"]');
-    if (box) box.style.display = on ? 'block' : 'none';
     if (opexEl) opexEl.readOnly = on;
     if (on) { buildOpexItemGrid(); updateOpexItemSum(); }
+    else { var box = $('#opexItemBox'); if (box) box.innerHTML = ''; }
   }
 
   function buildTrancheGrid() {
