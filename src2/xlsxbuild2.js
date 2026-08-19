@@ -5,7 +5,7 @@
      원본이 반복계산·연도 태그 SUMIF 등으로 얽혀 있어 엑셀 수식만으로
      재현하면 오차가 생긴다(CLAUDE.md "스컬프팅은 수식 자동화 불가"와
      같은 이유 — 그 원칙을 엔진 전체로 확장).
-   - 시트: 목차 / Report / Funding / Debt_A..후순위 / Debt_합계 /
+   - 시트: 목차 / Report / Funding / Debt(트랜치별+합계 한 시트) /
            Revenue / Opex / IS(Q) / CF(Q)
    - 열 규칙: B=구분, C=unit, D=합계, E~=분기 1..N
    ============================================================ */
@@ -182,59 +182,64 @@
     })();
 
     /* =========================================================
-       2. Debt — 트랜치별 5개 시트 + 합계
+       2. Debt — 트랜치별 + 합계를 한 시트에 위아래로 이어붙임
+          (예전엔 트랜치마다 별도 시트 5개 + 합계 시트였는데, 시트가
+          너무 쪼개져 있어 하나로 합쳐달라는 요청 반영)
        ========================================================= */
-    model.tranches.forEach(function (t, ti) {
-      var ws = sheet('Debt_' + t.name.replace(/\s/g, ''));
-      title(ws, '차입금 상환 스케줄 — ' + t.name);
-      section(ws, 4, '인출/상환');
-      periodHeader(ws, 6);
-      label(ws, 9, '기초잔액', '[KRWm]');
-      var bal = 0;
-      var opens = [], closes = [], ints = [], prins = [];
-      for (var n = 0; n < N; n++) {
-        opens.push(bal);
-        var draw = t.draws[n] || 0;
-        bal += draw;
-        var open2 = bal - draw;
-        var interest = periods[n].isOp ? open2 * t.rateO / (inp.ppy || 4) : 0;
-        var prin = (rows[n].principalBy && rows[n].principalBy[ti]) || 0;
-        bal -= prin;
-        ints.push(interest); prins.push(prin); closes.push(bal);
-      }
-      fillPeriods(ws, 9, function (n) { return opens[n]; }, FMT_M, { noSum: true });
-      label(ws, 10, '인출', '[KRWm]');
-      fillPeriods(ws, 10, function (n) { return t.draws[n] || 0; }, FMT_M);
-      label(ws, 11, '건설이자(IDC)', '[KRWm]');
-      fillPeriods(ws, 11, function (n) { return t.idcSeries[n] || 0; }, FMT_M);
-      label(ws, 12, '이자(운영)', '[KRWm]');
-      fillPeriods(ws, 12, function (n) { return ints[n]; }, FMT_M);
-      label(ws, 13, '원금상환', '[KRWm]');
-      fillPeriods(ws, 13, function (n) { return prins[n]; }, FMT_M);
-      label(ws, 14, '기말잔액', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 14, function (n) { return closes[n]; }, FMT_M, { bold: true, noSum: true });
-      label(ws, 16, '미상환 잔액(검증용)', '[KRWm]', { bold: true });
-      var finalBal = closes[N - 1];
-      put(ws, 'D16', finalBal, FMT_M, { bold: true });
-      put(ws, 'F16', Math.abs(finalBal) < 1 ? '완전상환 확인 (OK)' : '경고: 미상환 잔액', null, { bold: true });
-    });
     (function () {
-      var ws = sheet('Debt_합계', 'FF14483A');
-      title(ws, '차입금 상환 스케줄 — 전체 합계');
-      section(ws, 4, '전체 트랜치 합계');
-      periodHeader(ws, 6);
-      label(ws, 9, '기초잔액', '[KRWm]');
-      fillPeriods(ws, 9, function (n) { return rows[n].debtOpen; }, FMT_M, { noSum: true });
-      label(ws, 10, '이자', '[KRWm]');
-      fillPeriods(ws, 10, function (n) { return rows[n].interest; }, FMT_M);
-      label(ws, 11, '원금상환', '[KRWm]');
-      fillPeriods(ws, 11, function (n) { return rows[n].principal; }, FMT_M);
-      label(ws, 12, '원리금(DS)', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 12, function (n) { return rows[n].ds; }, FMT_M, { bold: true });
-      label(ws, 13, '기말잔액', '[KRWm]');
-      fillPeriods(ws, 13, function (n) { return rows[n].debtClose; }, FMT_M, { noSum: true });
-      label(ws, 15, 'DSRA 기말잔액', '[KRWm]');
-      fillPeriods(ws, 15, function (n) { return rows[n].dsraClose; }, FMT_M, { noSum: true });
+      var ws = sheet('Debt');
+      title(ws, '차입금 상환 스케줄 — 트랜치별 + 합계');
+      var r = 4;
+      section(ws, r, '트랜치별 인출/상환 + 전체 합계'); r += 2;
+      periodHeader(ws, r); r += 2;
+
+      model.tranches.forEach(function (t, ti) {
+        var bal = 0;
+        var opens = [], closes = [], ints = [], prins = [];
+        for (var n = 0; n < N; n++) {
+          opens.push(bal);
+          var draw = t.draws[n] || 0;
+          bal += draw;
+          var open2 = bal - draw;
+          var interest = periods[n].isOp ? open2 * t.rateO / (inp.ppy || 4) : 0;
+          var prin = (rows[n].principalBy && rows[n].principalBy[ti]) || 0;
+          bal -= prin;
+          ints.push(interest); prins.push(prin); closes.push(bal);
+        }
+        label(ws, r, t.name, null, { bold: true, fill: SUB_FILL }); r++;
+        label(ws, r, '기초잔액', '[KRWm]');
+        fillPeriods(ws, r, function (n) { return opens[n]; }, FMT_M, { noSum: true }); r++;
+        label(ws, r, '인출', '[KRWm]');
+        fillPeriods(ws, r, function (n) { return t.draws[n] || 0; }, FMT_M); r++;
+        label(ws, r, '건설이자(IDC)', '[KRWm]');
+        fillPeriods(ws, r, function (n) { return t.idcSeries[n] || 0; }, FMT_M); r++;
+        label(ws, r, '이자(운영)', '[KRWm]');
+        fillPeriods(ws, r, function (n) { return ints[n]; }, FMT_M); r++;
+        label(ws, r, '원금상환', '[KRWm]');
+        fillPeriods(ws, r, function (n) { return prins[n]; }, FMT_M); r++;
+        label(ws, r, '기말잔액', '[KRWm]', { bold: true });
+        fillPeriods(ws, r, function (n) { return closes[n]; }, FMT_M, { bold: true, noSum: true }); r++;
+        var finalBal = closes[N - 1];
+        label(ws, r, '미상환 잔액(검증용)', '[KRWm]');
+        put(ws, 'D' + r, finalBal, FMT_M);
+        put(ws, 'F' + r, Math.abs(finalBal) < 1 ? '완전상환 확인 (OK)' : '경고: 미상환 잔액');
+        r += 2;
+      });
+
+      section(ws, r, '전체 합계'); r++;
+      label(ws, r, '기초잔액', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return rows[n].debtOpen; }, FMT_M, { noSum: true }); r++;
+      label(ws, r, '이자', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return rows[n].interest; }, FMT_M); r++;
+      label(ws, r, '원금상환', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return rows[n].principal; }, FMT_M); r++;
+      label(ws, r, '원리금(DS)', '[KRWm]', { bold: true, fill: SUB_FILL });
+      fillPeriods(ws, r, function (n) { return rows[n].ds; }, FMT_M, { bold: true }); r++;
+      label(ws, r, '기말잔액', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return rows[n].debtClose; }, FMT_M, { noSum: true }); r++;
+      r++;
+      label(ws, r, 'DSRA 기말잔액', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return rows[n].dsraClose; }, FMT_M, { noSum: true });
     })();
 
     /* =========================================================
@@ -438,7 +443,7 @@
       var list = [
         ['Report', 'Executive Summary — 핵심 KPI'],
         ['Funding', '자금조달 — 자본금 + 5트랜치 조건'],
-        ['Debt_*', '트랜치별 상환 스케줄 (A/B/C/D/후순위) + 합계'],
+        ['Debt', '트랜치별 상환 스케줄 (A/B/C/D/후순위) + 합계'],
         ['Revenue', '발전량 · 매출'],
         ['Opex', '운영비 (선순위/후순위)'],
         ['IS(Q)', '분기 손익계산서'],
@@ -464,9 +469,7 @@
       ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FFB4573C' } };
     })();
 
-    var order = ['목차', 'Report', 'Funding'].concat(
-      model.tranches.map(function (t) { return 'Debt_' + t.name.replace(/\s/g, ''); }),
-      ['Debt_합계', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'],
+    var order = ['목차', 'Report', 'Funding', 'Debt', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'].concat(
       model.sensitivity && model.sensitivity.length ? ['민감도'] : []
     );
     order.forEach(function (n, idx) {
