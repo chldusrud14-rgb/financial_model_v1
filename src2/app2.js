@@ -66,6 +66,31 @@
     { k: 'discount', label: '할인율(NPV 계산용)', type: 'number', def: 5.5, unit: '%', group: '평가' }
   ];
 
+  // 총사업비/운영비 항목별 상세 입력 — 신속한 사업성 검토(합계만 입력)와
+  // 정밀 검토(항목별 입력) 둘 다 지원. 기본은 합계만 쓰는 간단 모드고,
+  // 체크박스로 항목별 입력 모드를 켤 수 있다. 항목명은 원본 당진 FS의
+  // 총사업비/운영비 세부내역 구성을 그대로 템플릿으로 씀(건설이자·DSRA는
+  // 별도 필드로 이미 있어서 제외).
+  var DEFAULT_CAPEX_ITEMS = ['EPC', '감리비', '공사보험료', '토지임대료(선납)', '토지임대료(분납)',
+    '사업개발비', '민원처리비', '사업성자문비', '법인운영비', '기타예비비', '신주발행비용', '금융부대비용'];
+  var DEFAULT_OPEX_ITEMS = [
+    { name: '부지임대료', escal: 0, senior: true },
+    { name: 'O&M', escal: 1.5, senior: false },
+    { name: '보험료', escal: 0, senior: true },
+    { name: '환경모니터링비용', escal: 0, senior: true },
+    { name: '소내전력비', escal: 2, senior: true },
+    { name: '인건비', escal: 2, senior: true },
+    { name: '법인운영비', escal: 2, senior: true },
+    { name: '주민보상비', escal: 0, senior: true },
+    { name: '도로점용료', escal: 0, senior: true },
+    { name: '예비비', escal: 0, senior: true },
+    { name: '전력거래수수료', escal: 0, senior: true },
+    { name: '관리운영비 성과보수', escal: 0, senior: false }
+  ];
+  var capexDetailOn = false, opexDetailOn = false;
+  var CAPEX_ITEMS = DEFAULT_CAPEX_ITEMS.map(function (n) { return { name: n, amountEok: null }; });
+  var OPEX_ITEMS = DEFAULT_OPEX_ITEMS.map(function (d) { return { name: d.name, amountEok: null, escal: d.escal, senior: d.senior }; });
+
   var SHAREHOLDERS = [{ name: '출자자1', stakePct: 100 }];
 
   // 민감도 분석 시나리오 — 판매단가(원/kWh)/총사업비(억원)/운영비(억원)/
@@ -156,6 +181,198 @@
     });
     det.appendChild(body2);
     wrap.appendChild(det);
+
+    // 총사업비/운영비 항목별 입력 토글 — 위 필수 입력의 "총사업비"/"운영비"
+    // 합계 필드 바로 아래에 둔다.
+    wrap.appendChild(itemToggleBlock('capex', '총사업비를 항목별로 입력', '항목별 금액을 모르면 체크하지 말고 위 "총사업비" 합계만 입력하세요 — 빠른 사업성 검토용. 체크하면 위 필드는 항목 합계로 자동 계산됩니다.'));
+    wrap.appendChild(itemToggleBlock('opex', '운영비를 항목별로 입력', '항목별 금액을 모르면 체크하지 말고 위 "운영비" 합계만 입력하세요. 체크하면 항목별 상승률·선순위/후순위까지 반영돼서 계산 정확도가 올라갑니다(총액 근사 대신 항목별 계산 사용).'));
+  }
+
+  function itemToggleBlock(kind, label2, hint) {
+    var wrap = el('div', 'itemToggle');
+    var lab = document.createElement('label');
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.id = kind + 'DetailToggle';
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(' ' + label2));
+    wrap.appendChild(lab);
+    wrap.appendChild(el('div', 'fhint', hint));
+    var box = el('div', 'itemBox');
+    box.id = kind + 'ItemBox';
+    box.style.display = 'none';
+    wrap.appendChild(box);
+    return wrap;
+  }
+
+  function capexItemRow(it, idx) {
+    var tr = document.createElement('tr');
+    var nameTd = document.createElement('td');
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text'; nameInput.value = it.name; nameInput.dataset.capexIdx = idx; nameInput.dataset.capexF = 'name';
+    nameTd.appendChild(nameInput); tr.appendChild(nameTd);
+    var amtTd = document.createElement('td');
+    var amtInput = document.createElement('input');
+    amtInput.type = 'number'; amtInput.step = 'any';
+    amtInput.value = it.amountEok === null || it.amountEok === undefined ? '' : it.amountEok;
+    amtInput.dataset.capexIdx = idx; amtInput.dataset.capexF = 'amountEok';
+    amtTd.appendChild(amtInput); tr.appendChild(amtTd);
+    var rmTd = document.createElement('td');
+    var rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
+    rm.addEventListener('click', function () {
+      if (CAPEX_ITEMS.length <= 1) return;
+      CAPEX_ITEMS.splice(idx, 1);
+      buildCapexItemGrid();
+      updateCapexItemSum();
+    });
+    rmTd.appendChild(rm); tr.appendChild(rmTd);
+    return tr;
+  }
+
+  function buildCapexItemGrid() {
+    var box = $('#capexItemBox');
+    if (!box) return;
+    box.innerHTML = '';
+    var t = el('table', 'tr');
+    t.innerHTML = '<thead><tr><th>항목</th><th>금액(억원)</th><th></th></tr></thead>';
+    var tb = document.createElement('tbody');
+    CAPEX_ITEMS.forEach(function (it, idx) { tb.appendChild(capexItemRow(it, idx)); });
+    t.appendChild(tb);
+    box.appendChild(t);
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button'; addBtn.className = 'btn ghost'; addBtn.style.marginTop = '8px';
+    addBtn.textContent = '+ 항목 추가';
+    addBtn.addEventListener('click', function () {
+      CAPEX_ITEMS.push({ name: '항목' + (CAPEX_ITEMS.length + 1), amountEok: null });
+      buildCapexItemGrid();
+    });
+    box.appendChild(addBtn);
+    var sum = el('div', 'spendsum'); sum.id = 'capexItemSum';
+    box.appendChild(sum);
+    updateCapexItemSum();
+  }
+
+  function readCapexItems() {
+    var trs = Array.prototype.slice.call(document.querySelectorAll('#capexItemBox tbody tr'));
+    return trs.map(function (tr) {
+      var nameEl = tr.querySelector('[data-capex-f="name"]');
+      var amtEl = tr.querySelector('[data-capex-f="amountEok"]');
+      return { name: nameEl.value, amountEok: amtEl.value === '' ? null : Number(amtEl.value) };
+    });
+  }
+
+  function updateCapexItemSum() {
+    CAPEX_ITEMS = readCapexItems();
+    var sum = CAPEX_ITEMS.reduce(function (a, it) { return a + (it.amountEok || 0); }, 0);
+    var box = $('#capexItemSum');
+    if (box) box.innerHTML = '<span>항목 합계</span><span>' + sum.toFixed(2) + '억원</span>';
+    if (capexDetailOn) {
+      var capexEl = $('[data-k="capexEok"]');
+      capexEl.value = sum.toFixed(2);
+      capexEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function toggleCapexDetail(on) {
+    capexDetailOn = on;
+    var box = $('#capexItemBox');
+    var capexEl = $('[data-k="capexEok"]');
+    if (box) box.style.display = on ? 'block' : 'none';
+    if (capexEl) capexEl.readOnly = on;
+    if (on) { buildCapexItemGrid(); updateCapexItemSum(); }
+  }
+
+  function opexItemRow(it, idx) {
+    var tr = document.createElement('tr');
+    function cell(type, val, f) {
+      var td = document.createElement('td');
+      var input = document.createElement('input');
+      input.type = type; if (type === 'number') input.step = 'any';
+      input.value = val === null || val === undefined ? '' : val;
+      input.dataset.opexIdx = idx; input.dataset.opexF = f;
+      td.appendChild(input);
+      return td;
+    }
+    tr.appendChild(cell('text', it.name, 'name'));
+    tr.appendChild(cell('number', it.amountEok, 'amountEok'));
+    tr.appendChild(cell('number', it.escal, 'escal'));
+    var selTd = document.createElement('td');
+    var sel = document.createElement('select');
+    sel.innerHTML = '<option value="1">선순위</option><option value="0">후순위</option>';
+    sel.value = it.senior === false ? '0' : '1';
+    sel.dataset.opexIdx = idx; sel.dataset.opexF = 'senior';
+    selTd.appendChild(sel); tr.appendChild(selTd);
+    var rmTd = document.createElement('td');
+    var rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
+    rm.addEventListener('click', function () {
+      if (OPEX_ITEMS.length <= 1) return;
+      OPEX_ITEMS.splice(idx, 1);
+      buildOpexItemGrid();
+      updateOpexItemSum();
+    });
+    rmTd.appendChild(rm); tr.appendChild(rmTd);
+    return tr;
+  }
+
+  function buildOpexItemGrid() {
+    var box = $('#opexItemBox');
+    if (!box) return;
+    box.innerHTML = '';
+    var t = el('table', 'tr');
+    t.innerHTML = '<thead><tr><th>항목</th><th>연간금액(억원/yr)</th><th>상승률(%/yr)</th><th>지급순위</th><th></th></tr></thead>';
+    var tb = document.createElement('tbody');
+    OPEX_ITEMS.forEach(function (it, idx) { tb.appendChild(opexItemRow(it, idx)); });
+    t.appendChild(tb);
+    box.appendChild(t);
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button'; addBtn.className = 'btn ghost'; addBtn.style.marginTop = '8px';
+    addBtn.textContent = '+ 항목 추가';
+    addBtn.addEventListener('click', function () {
+      OPEX_ITEMS.push({ name: '항목' + (OPEX_ITEMS.length + 1), amountEok: null, escal: 0, senior: true });
+      buildOpexItemGrid();
+    });
+    box.appendChild(addBtn);
+    var sum = el('div', 'spendsum'); sum.id = 'opexItemSum';
+    box.appendChild(sum);
+    updateOpexItemSum();
+  }
+
+  function readOpexItemsDetailed() {
+    var trs = Array.prototype.slice.call(document.querySelectorAll('#opexItemBox tbody tr'));
+    return trs.map(function (tr) {
+      var nameEl = tr.querySelector('[data-opex-f="name"]');
+      var amtEl = tr.querySelector('[data-opex-f="amountEok"]');
+      var escalEl = tr.querySelector('[data-opex-f="escal"]');
+      var seniorEl = tr.querySelector('[data-opex-f="senior"]');
+      return {
+        name: nameEl.value,
+        amountEok: amtEl.value === '' ? null : Number(amtEl.value),
+        escal: escalEl.value === '' ? 0 : Number(escalEl.value),
+        senior: seniorEl.value === '1'
+      };
+    });
+  }
+
+  function updateOpexItemSum() {
+    OPEX_ITEMS = readOpexItemsDetailed();
+    var sum = OPEX_ITEMS.reduce(function (a, it) { return a + (it.amountEok || 0); }, 0);
+    var box = $('#opexItemSum');
+    if (box) box.innerHTML = '<span>항목 합계(1년차 기준)</span><span>' + sum.toFixed(2) + '억원/yr</span>';
+    if (opexDetailOn) {
+      var opexEl = $('[data-k="opexEok"]');
+      opexEl.value = sum.toFixed(2);
+      opexEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function toggleOpexDetail(on) {
+    opexDetailOn = on;
+    var box = $('#opexItemBox');
+    var opexEl = $('[data-k="opexEok"]');
+    if (box) box.style.display = on ? 'block' : 'none';
+    if (opexEl) opexEl.readOnly = on;
+    if (on) { buildOpexItemGrid(); updateOpexItemSum(); }
   }
 
   function buildTrancheGrid() {
@@ -401,6 +618,11 @@
         { share: baseInp.rpsShare / 100, price: baseInp.smpPrice + baseInp.recWeight * baseInp.recPrice, escal: baseInp.tariffEscal },
         { share: 1 - baseInp.rpsShare / 100, price: baseInp.tariff, escal: baseInp.tariffEscal }
       ];
+    }
+    if (opexDetailOn) {
+      baseInp.opexItems = readOpexItemsDetailed().map(function (it) {
+        return { name: it.name, annualKRWm: (it.amountEok || 0) * 100, escal: it.escal, senior: it.senior };
+      });
     }
     baseInp.shareholders = readShareholders();
     return baseInp;
@@ -785,6 +1007,14 @@
           { share: 1 - core.rpsShare / 100, price: core.tariff, escal: core.tariffEscal }
         ];
       }
+      // 운영비 항목별 입력을 켰으면 엔진이 이미 지원하는 opexItems 경로로
+      // 넘겨서 계산 자체가 항목별 상승률·선순위/후순위를 반영하게 한다
+      // (안 켰으면 기존처럼 총액 근사).
+      if (opexDetailOn) {
+        inp.opexItems = readOpexItemsDetailed().map(function (it) {
+          return { name: it.name, annualKRWm: (it.amountEok || 0) * 100, escal: it.escal, senior: it.senior };
+        });
+      }
     }
     // 사업자 구성은 프리셋 여부와 무관하게 화면 입력을 그대로 쓴다 —
     // 자본금 총액을 나눠 낸 여러 출자자에게 지분율만큼 배당을 배분하는
@@ -792,6 +1022,16 @@
     inp = Object.assign({}, inp, { shareholders: readShareholders() });
     try {
       model = M.computeModel(inp);
+      // 총사업비/운영비 세부 항목은 계산 결과가 아니라 엑셀 표시용
+      // 부가정보 — 합계만 입력한 경우에도 엑셀에는 항목 이름이 나오고
+      // 금액만 비워두고 싶다는 요청 반영. capexItems는 항상 붙이고
+      // (엔진이 쓰는 값이 아니라 순수 표시용), opexDisplayItems는
+      // inp.opexItems(실제 계산에 쓰인 항목별 값)가 없을 때만 붙인다 —
+      // 있으면 xlsxbuild2.js가 그 실제값으로 이미 항목별 표시를 한다.
+      model.capexItems = capexDetailOn ? readCapexItems() : DEFAULT_CAPEX_ITEMS.map(function (n) { return { name: n, amountEok: null }; });
+      if (!inp.opexItems) {
+        model.opexDisplayItems = DEFAULT_OPEX_ITEMS.map(function (d) { return { name: d.name, amountEok: null }; });
+      }
       renderKPIs();
       $('#xls').disabled = false;
       toast(usingPreset ? '당진 FS 실측치 기준으로 생성 완료 (원본과 검증된 값)' : '재무모델 생성 완료');
@@ -842,6 +1082,10 @@
   $('[data-k="equityRatioPct"]').addEventListener('input', function () { syncEquityRatio(true); });
   $('#spendReset').addEventListener('click', buildSpendCurve);
   $('#spendbox').addEventListener('input', updateSpendSum);
+  $('#capexDetailToggle').addEventListener('change', function (e) { toggleCapexDetail(e.target.checked); });
+  $('#capexItemBox').addEventListener('input', updateCapexItemSum);
+  $('#opexDetailToggle').addEventListener('change', function (e) { toggleOpexDetail(e.target.checked); });
+  $('#opexItemBox').addEventListener('input', updateOpexItemSum);
   $('#shAdd').addEventListener('click', function () {
     SHAREHOLDERS.push({ name: '출자자' + (SHAREHOLDERS.length + 1), stakePct: 0 });
     buildShareholderGrid();

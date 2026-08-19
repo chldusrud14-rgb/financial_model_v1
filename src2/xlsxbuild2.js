@@ -194,6 +194,27 @@
       put(ws, 'B' + r, '총투자비(TIC)[KRWm]'); put(ws, 'C' + r, model.tic, FMT_M); r++;
       put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); put(ws, 'C' + r, inp.capexEok * 100, FMT_M); r++;
 
+      // 총사업비 세부내역 — 화면에서 항목별로 입력했으면 실제 금액, 합계만
+      // 입력했으면 항목명만(금액은 빈칸) 표시한다. 어느 쪽이든 항목
+      // 구성 자체는 항상 보이게 해달라는 요청 반영.
+      if (model.capexItems && model.capexItems.length) {
+        r += 1;
+        section(ws, r, '총사업비 세부내역'); r += 2;
+        ['항목', '금액[KRWm]'].forEach(function (h, idx) {
+          var c = ws.getCell(colLetter(2 + idx) + r);
+          c.value = h;
+          c.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+          c.alignment = { horizontal: 'center' };
+        });
+        r++;
+        model.capexItems.forEach(function (it) {
+          put(ws, 'B' + r, it.name);
+          if (it.amountEok != null) put(ws, 'C' + r, it.amountEok * 100, FMT_M);
+          r++;
+        });
+      }
+
       var sh = model.kpi && model.kpi.shareholders;
       if (sh && sh.length > 1) {
         r += 1;
@@ -323,11 +344,21 @@
       fillPeriods(ws, r, function (n) { return rows[n].revenue; }, FMT_M, { bold: true }); r += 2;
 
       var opexRows = inp.opexItems && inp.opexItems.length;
+      var opexLabelsOnly = !opexRows && model.opexDisplayItems && model.opexDisplayItems.length;
       if (opexRows) {
         label(ws, r, '영업비용 세부내역', null, { bold: true }); r++;
         inp.opexItems.forEach(function (it, idx) {
           label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
           fillPeriods(ws, r, function (n) { var b = itemizedOpex(n); return b ? -b[idx] : 0; }, FMT_M); r++;
+        });
+        label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
+        fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M, { bold: true }); r++;
+      } else if (opexLabelsOnly) {
+        // 합계만 입력한 경우 — 항목 이름만 보여주고 금액칸은 비워둔다
+        // (화면에서 항목별 금액을 안 넣었으니 추정치를 임의로 채우지 않음).
+        label(ws, r, '영업비용 세부내역', null, { bold: true }); r++;
+        model.opexDisplayItems.forEach(function (it) {
+          label(ws, r, it.name, '[KRWm]', { indent: true }); r++;
         });
         label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
         fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M, { bold: true }); r++;
@@ -376,6 +407,10 @@
       if (opexRows) {
         r++;
         ws.getCell('B' + r).value = '※ 영업비용 세부내역은 실측 오버라이드가 적용된 분기의 경우 항목별 실제값이 아니라, 공식(항목별 물가상승률) 기준 비중을 실제 합계에 비례 배분한 근사치입니다 — 합계 자체는 검증된 실제값과 정확히 일치합니다.';
+        ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+      } else if (opexLabelsOnly) {
+        r++;
+        ws.getCell('B' + r).value = '※ 화면에서 운영비를 합계로만 입력해서 항목별 금액은 비어 있습니다 — 항목별로 입력하면 이 표에 실제 금액이 채워집니다.';
         ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       }
     })();
