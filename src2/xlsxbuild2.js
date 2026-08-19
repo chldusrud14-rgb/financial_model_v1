@@ -36,6 +36,41 @@
     var pc = function (n) { return colLetter(C0 + n); }; // 0-based 분기 인덱스 -> 열문자
     var firstC = pc(0), lastC = pc(N - 1);
 
+    // 트랜치별 이자(운영) 시리즈 — Debt 시트와 IS(Q) 시트(이자비용 세부내역)가
+    // 같은 계산을 각자 다시 하지 않도록 한 번만 구해서 공유한다.
+    var trancheInterest = model.tranches.map(function (t, ti) {
+      var bal = 0, ints = [];
+      for (var n = 0; n < N; n++) {
+        var draw = t.draws[n] || 0;
+        bal += draw;
+        var open2 = bal - draw;
+        ints.push(periods[n].isOp ? open2 * t.rateO / (inp.ppy || 4) : 0);
+        bal -= (rows[n].principalBy && rows[n].principalBy[ti]) || 0;
+      }
+      return { name: t.name, ints: ints };
+    });
+
+    // 항목별 운영비 추정치 — 실측 오버라이드(periodOverrides)가 있는
+    // 분기는 항목별 실제값이 아니라 "선순위/후순위 합계"만 저장돼 있어서,
+    // 공식(opexItems escalation)으로 각 항목의 상대 비중을 구한 뒤 실제
+    // 합계에 맞춰 비례 배분한다 — 항목 합은 항상 검증된 실제 합계와
+    // 정확히 일치하고, 항목 간 배분만 근사치다(오버라이드 없는 일반
+    // 입력에서는 이 계산 자체가 곧 실제값이라 근사가 아니다).
+    function itemizedOpex(n) {
+      if (!inp.opexItems || !inp.opexItems.length) return null;
+      var p = periods[n];
+      var actual = (p.opexSenior || 0) + (p.opexSub || 0);
+      if (!p.isOp || actual === 0) return inp.opexItems.map(function () { return 0; });
+      var frac = p.opMonths / 12;
+      var raws = inp.opexItems.map(function (it) {
+        var esc = it.escal ? Math.pow(1 + it.escal / 100, p.opYearIdx) : 1;
+        return it.annualKRWm * frac * esc;
+      });
+      var rawSum = raws.reduce(function (a, b) { return a + b; }, 0);
+      var scale = rawSum > 0 ? actual / rawSum : 0;
+      return raws.map(function (v) { return v * scale; });
+    }
+
     function sheet(name, tab) {
       var ws = wb.addWorksheet(name, {
         views: [{ state: 'frozen', xSplit: 4, ySplit: 7 }],
@@ -280,30 +315,69 @@
     (function () {
       var ws = sheet('IS(Q)');
       title(ws, '추정 손익계산서 (분기)');
-      section(ws, 4, '손익계산서');
-      periodHeader(ws, 6);
-      label(ws, 9, '영업수익', '[KRWm]');
-      fillPeriods(ws, 9, function (n) { return rows[n].revenue; }, FMT_M);
-      label(ws, 10, '영업비용', '[KRWm]');
-      fillPeriods(ws, 10, function (n) { return -rows[n].opex; }, FMT_M);
-      label(ws, 11, 'EBITDA', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 11, function (n) { return rows[n].ebitda; }, FMT_M, { bold: true });
-      label(ws, 12, '감가상각비', '[KRWm]');
-      fillPeriods(ws, 12, function (n) { return -rows[n].dep; }, FMT_M);
-      label(ws, 13, '복구충당부채 전입액', '[KRWm]');
-      fillPeriods(ws, 13, function (n) { return -(rows[n].decomAccrual || 0); }, FMT_M);
-      label(ws, 14, '영업이익(EBIT)', '[KRWm]', { bold: true });
-      fillPeriods(ws, 14, function (n) { return rows[n].ebit; }, FMT_M, { bold: true });
-      label(ws, 15, '이자비용', '[KRWm]');
-      fillPeriods(ws, 15, function (n) { return -rows[n].interest; }, FMT_M);
-      label(ws, 16, '대리은행수수료', '[KRWm]');
-      fillPeriods(ws, 16, function (n) { return -(rows[n].agentFee || 0); }, FMT_M);
-      label(ws, 17, '법인세차감전순이익', '[KRWm]', { bold: true });
-      fillPeriods(ws, 17, function (n) { return rows[n].ebt; }, FMT_M, { bold: true });
-      label(ws, 18, '법인세비용', '[KRWm]');
-      fillPeriods(ws, 18, function (n) { return -rows[n].tax; }, FMT_M);
-      label(ws, 19, '당기순이익', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 19, function (n) { return rows[n].ni; }, FMT_M, { bold: true });
+      var r = 4;
+      section(ws, r, '손익계산서'); r += 2;
+      periodHeader(ws, r); r += 2;
+
+      label(ws, r, '영업수익', '[KRWm]', { bold: true });
+      fillPeriods(ws, r, function (n) { return rows[n].revenue; }, FMT_M, { bold: true }); r += 2;
+
+      var opexRows = inp.opexItems && inp.opexItems.length;
+      if (opexRows) {
+        label(ws, r, '영업비용 세부내역', null, { bold: true }); r++;
+        inp.opexItems.forEach(function (it, idx) {
+          label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
+          fillPeriods(ws, r, function (n) { var b = itemizedOpex(n); return b ? -b[idx] : 0; }, FMT_M); r++;
+        });
+        label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
+        fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M, { bold: true }); r++;
+      } else {
+        label(ws, r, '영업비용', '[KRWm]');
+        fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M); r++;
+      }
+      r++;
+      label(ws, r, 'EBITDA', '[KRWm]', { bold: true, fill: SUB_FILL });
+      fillPeriods(ws, r, function (n) { return rows[n].ebitda; }, FMT_M, { bold: true }); r++;
+      label(ws, r, 'EBITDA 마진', '[%]');
+      fillPeriods(ws, r, function (n) { return rows[n].revenue > 0 ? rows[n].ebitda / rows[n].revenue : null; }, FMT_P, { noSum: true }); r++;
+      r++;
+      label(ws, r, '감가상각비', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return -rows[n].dep; }, FMT_M); r++;
+      label(ws, r, '복구충당부채 전입액', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return -(rows[n].decomAccrual || 0); }, FMT_M); r++;
+      label(ws, r, '영업이익(EBIT)', '[KRWm]', { bold: true });
+      fillPeriods(ws, r, function (n) { return rows[n].ebit; }, FMT_M, { bold: true }); r++;
+      label(ws, r, '영업이익률', '[%]');
+      fillPeriods(ws, r, function (n) { return rows[n].revenue > 0 ? rows[n].ebit / rows[n].revenue : null; }, FMT_P, { noSum: true }); r++;
+      r++;
+
+      if (trancheInterest.length) {
+        label(ws, r, '이자비용 세부내역', null, { bold: true }); r++;
+        trancheInterest.forEach(function (ti) {
+          label(ws, r, ti.name + ' 이자', '[KRWm]', { indent: true });
+          fillPeriods(ws, r, function (n) { return -(ti.ints[n] || 0); }, FMT_M); r++;
+        });
+        label(ws, r, '이자비용 합계', '[KRWm]', { bold: true });
+        fillPeriods(ws, r, function (n) { return -rows[n].interest; }, FMT_M, { bold: true }); r++;
+      } else {
+        label(ws, r, '이자비용', '[KRWm]');
+        fillPeriods(ws, r, function (n) { return -rows[n].interest; }, FMT_M); r++;
+      }
+      label(ws, r, '대리은행수수료', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return -(rows[n].agentFee || 0); }, FMT_M); r++;
+      r++;
+      label(ws, r, '법인세차감전순이익', '[KRWm]', { bold: true });
+      fillPeriods(ws, r, function (n) { return rows[n].ebt; }, FMT_M, { bold: true }); r++;
+      label(ws, r, '법인세비용', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return -rows[n].tax; }, FMT_M); r++;
+      label(ws, r, '당기순이익', '[KRWm]', { bold: true, fill: SUB_FILL });
+      fillPeriods(ws, r, function (n) { return rows[n].ni; }, FMT_M, { bold: true }); r++;
+
+      if (opexRows) {
+        r++;
+        ws.getCell('B' + r).value = '※ 영업비용 세부내역은 실측 오버라이드가 적용된 분기의 경우 항목별 실제값이 아니라, 공식(항목별 물가상승률) 기준 비중을 실제 합계에 비례 배분한 근사치입니다 — 합계 자체는 검증된 실제값과 정확히 일치합니다.';
+        ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+      }
     })();
 
     /* =========================================================

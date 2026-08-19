@@ -26,7 +26,7 @@ const dangjin = {
   operationYears: ref.project.operationYears,
   capexEok: ref.funding.TIC_exIDC / 100,
   dsraEok: ref.funding.DSRA / 100,
-  opexItems: ref.opexItems.map(it => ({ annualKRWm: it.annualKRWm, escal: it.escalRate * 100, senior: it.senior })),
+  opexItems: ref.opexItems.map(it => ({ name: it.name, annualKRWm: it.annualKRWm, escal: it.escalRate * 100, senior: it.senior })),
   spendCurve: ref.spendCurve_KRWm,
   tariffTracks: ref.tariffTracks.map(t => ({ share: t.share, price: t.price })),
   seasonality: Object.fromEntries(Object.entries(ref.seasonality).map(([m, v]) => [Number(m), v])),
