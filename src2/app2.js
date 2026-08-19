@@ -76,9 +76,12 @@
   // 별도 필드로 이미 있어서 제외).
   var DEFAULT_CAPEX_ITEMS = ['EPC', '감리비', '공사보험료', '토지임대료(선납)', '토지임대료(분납)',
     '사업개발비', '민원처리비', '사업성자문비', '법인운영비', '기타예비비', '신주발행비용', '금융부대비용'];
+  // 지급순위 기본값은 전부 선순위(원본 당진 실측치는 항목별로 다르지만,
+  // 화면 템플릿 기본값은 단순하게 전부 선순위로 시작 — 필요하면 사용자가
+  // 개별 항목만 후순위로 바꾸면 됨).
   var DEFAULT_OPEX_ITEMS = [
     { name: '부지임대료', escal: 0, senior: true },
-    { name: 'O&M', escal: 1.5, senior: false },
+    { name: 'O&M', escal: 1.5, senior: true },
     { name: '보험료', escal: 0, senior: true },
     { name: '환경모니터링비용', escal: 0, senior: true },
     { name: '소내전력비', escal: 2, senior: true },
@@ -88,7 +91,7 @@
     { name: '도로점용료', escal: 0, senior: true },
     { name: '예비비', escal: 0, senior: true },
     { name: '전력거래수수료', escal: 0, senior: true },
-    { name: '관리운영비 성과보수', escal: 0, senior: false }
+    { name: '관리운영비 성과보수', escal: 0, senior: true }
   ];
   var capexDetailOn = false, opexDetailOn = false;
   var CAPEX_ITEMS = DEFAULT_CAPEX_ITEMS.map(function (n) { return { name: n, amountEok: null }; });
@@ -337,6 +340,9 @@
     OPEX_ITEMS.forEach(function (it, idx) { tb.appendChild(opexItemRow(it, idx)); });
     t.appendChild(tb);
     box.appendChild(t);
+    box.appendChild(el('div', 'trlegend',
+      '<b>선순위</b>: 원리금 상환 전에 먼저 빠지는 비용 — 이 비용이 많을수록 원리금 상환여력(DSCR)이 낮게 계산됩니다. ' +
+      '<b>후순위</b>: 원리금 상환 후 배당 전에 빠지는 비용 — DSCR 계산엔 영향 없음. 기본값은 전부 선순위입니다.'));
     var addBtn = document.createElement('button');
     addBtn.type = 'button'; addBtn.className = 'btn ghost'; addBtn.style.marginTop = '8px';
     addBtn.textContent = '+ 항목 추가';
