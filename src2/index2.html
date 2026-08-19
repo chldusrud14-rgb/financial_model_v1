@@ -50,9 +50,13 @@ button,input,select{font-family:inherit;font-size:inherit;color:inherit}
 .f .ftoggle{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:var(--brand-d);cursor:pointer;white-space:nowrap}
 .f .ftoggle input{width:auto;cursor:pointer}
 
-/* 총사업비/운영비 항목별 입력 표 */
-.itemBox{margin-top:2px;padding-top:12px}
-.itemBox table.tr{width:100%}
+/* 총사업비/운영비 항목별 입력 표 — 위 필드처럼 반반(1칸씩) 나란히 배치.
+   가로가 좁아지니 표는 필요하면 이 박스 안에서만 스크롤(페이지 전체가
+   가로로 밀리지 않게). */
+.itemBox{margin-top:2px;padding-top:12px;min-width:0;overflow-x:auto}
+.itemBox table.tr{width:100%;min-width:280px;font-size:11px}
+.itemBox table.tr th,.itemBox table.tr td{padding:5px 3px}
+.itemBox table.tr td input,.itemBox table.tr td select{padding:5px 4px;font-size:11px}
 .itemBox .spendsum{margin-top:8px}
 
 /* 섹션 그룹 + 더보기(상세가정) — v1과 같은 패턴 */

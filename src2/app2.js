@@ -171,15 +171,15 @@
       // 빈 칸을 하나 더 넣어줘야 다음 행이 새 줄에서 시작한다(안 그러면
       // 다음 행 첫 필드가 이 행의 남은 칸에 끼어들어가 버림).
       if (colsUsed === 1) essential.appendChild(el('div'));
-      // 총사업비/운영비 항목별 입력 표는 해당 필드 바로 아래(체크박스가
-      // 그 필드 라벨 옆에 있으니 표도 그 자리에 붙어야 자연스럽다) —
-      // 전체 폭으로 한 줄 차지.
+      // 총사업비/운영비 항목별 입력 표는 해당 필드 바로 아래 줄에 — 전체
+      // 폭 하나로 겹쳐 쌓이지 않게, 위 필드들처럼 반반(1칸씩) 나눠서
+      // 나란히 배치한다(둘 다 켜면 좌우로 같이 보임).
       if (row.indexOf('capexEok') >= 0) {
-        var capexBox = el('div', 'itemBox full'); capexBox.id = 'capexItemBox'; capexBox.style.display = 'none';
+        var capexBox = el('div', 'itemBox'); capexBox.id = 'capexItemBox'; capexBox.style.display = 'none';
         essential.appendChild(capexBox);
       }
       if (row.indexOf('opexEok') >= 0) {
-        var opexBox = el('div', 'itemBox full'); opexBox.id = 'opexItemBox'; opexBox.style.display = 'none';
+        var opexBox = el('div', 'itemBox'); opexBox.id = 'opexItemBox'; opexBox.style.display = 'none';
         essential.appendChild(opexBox);
       }
     });
