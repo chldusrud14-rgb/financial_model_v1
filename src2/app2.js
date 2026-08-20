@@ -4,6 +4,23 @@
   var el = function (t, c, h) { var e = document.createElement(t); if (c) e.className = c; if (h !== undefined) e.innerHTML = h; return e; };
   var M = window.SolarModel2, X = window.SolarXlsx2;
 
+  // 착공시점+공사기간 -> 준공시점(COD) 표시용 계산 — engine2.js의
+  // ym()/addM()과 같은 방식(월 단위, "착공월+공사기간=준공 다음달"이라
+  // 마지막 달은 -1). 순수 화면 표시용이라 엔진 계산에는 관여하지 않는다.
+  function updateCodDisplay() {
+    var disp = $('[data-display="codDisplay"]');
+    if (!disp) return;
+    var startEl = $('[data-k="constructionStart"]'), monthsEl = $('[data-k="constructionMonths"]');
+    if (!startEl || !monthsEl) return;
+    var m = /^(\d{4})-(\d{1,2})$/.exec(startEl.value || '');
+    var months = Number(monthsEl.value);
+    if (!m || !months) { disp.textContent = '—'; return; }
+    var y = Number(m[1]), mo = Number(m[2]);
+    var t = y * 12 + (mo - 1) + months - 1; // 준공월(착공 포함 공사기간 마지막 달)
+    var cy = Math.floor(t / 12), cm = (t % 12) + 1;
+    disp.textContent = cy + '-' + (cm < 10 ? '0' + cm : cm);
+  }
+
   /* ---------- 기본 입력 필드 ----------
      essential: 항상 보이는 핵심 가정. 나머지는 그룹별로 묶어서
      "상세 가정" 접힘 영역에 넣는다 — 26개를 한 화면에 쭉 나열하지 않는다. */
@@ -31,6 +48,8 @@
       hint: '발전한 전력 중 설비 자체가 쓰는 비율' },
     { k: 'constructionStart', label: '착공시점', type: 'text', def: '2024-06', unit: 'YYYY-MM', group: '발전소 특성' },
     { k: 'constructionMonths', label: '공사기간', type: 'number', def: 16, unit: 'Month', group: '발전소 특성' },
+    { k: 'codDisplay', label: '준공시점(COD, 자동계산)', type: 'display', group: '발전소 특성',
+      hint: '착공시점+공사기간으로 자동 계산됩니다 — 직접 입력하는 칸이 아닙니다(원본 당진 엑셀의 "준공시점"도 같은 방식의 수식 셀입니다).' },
     { k: 'operationYears', label: '운영기간', type: 'number', def: 20, unit: 'Year', group: '발전소 특성' },
 
     { k: 'dsraEok', label: '최초 DSRA', type: 'number', def: 50, unit: '억원', group: '재원조달·감가상각',
@@ -136,13 +155,24 @@
       wrapf.appendChild(el('label', null, d.label));
     }
     var inw = el('div', 'in2');
-    var input = document.createElement('input');
-    input.type = d.type === 'text' ? 'text' : 'number';
-    input.step = 'any';
-    input.value = d.def;
-    input.dataset.k = d.k;
-    inw.appendChild(input);
-    if (d.unit) inw.appendChild(el('span', 'unit', d.unit));
+    if (d.type === 'display') {
+      // 입력칸이 아니라 다른 필드에서 자동 계산되는 값을 보여주기만
+      // 하는 필드(예: 준공시점) — mwref와 같은 성격으로 input 대신
+      // 회색 이탤릭 텍스트로 렌더링.
+      var disp = document.createElement('span');
+      disp.className = 'mwref'; disp.style.textAlign = 'left';
+      disp.dataset.display = d.k;
+      disp.textContent = '—';
+      inw.appendChild(disp);
+    } else {
+      var input = document.createElement('input');
+      input.type = d.type === 'text' ? 'text' : 'number';
+      input.step = 'any';
+      input.value = d.def;
+      input.dataset.k = d.k;
+      inw.appendChild(input);
+      if (d.unit) inw.appendChild(el('span', 'unit', d.unit));
+    }
     wrapf.appendChild(inw);
     if (d.hint) wrapf.appendChild(el('div', 'fhint', d.hint));
     return wrapf;
@@ -767,6 +797,7 @@
   function readCore() {
     var inp = {};
     CORE.forEach(function (d) {
+      if (d.type === 'display') return; // 계산 결과 표시용일 뿐 입력값이 아님
       var v = $('[data-k="' + d.k + '"]').value;
       inp[d.k] = d.type === 'text' ? v : Number(v);
     });
@@ -911,6 +942,7 @@
     presetInp = buildDangjinInp(ref);
     usingPreset = true;
     suppressDirty = false;
+    updateCodDisplay();
     toast('당진 FS 실측치를 불러왔습니다 — 이제 "생성"을 누르면 검증된 원본과 동일한 숫자가 나옵니다');
   }
 
@@ -1114,8 +1146,11 @@
   buildShareholderGrid();
   buildSpendCurve();
   updateRecWeightState();
+  updateCodDisplay();
   $('#trQuick').addEventListener('click', quickFillTranches);
   $('[data-k="rpsShare"]').addEventListener('input', updateRecWeightState);
+  $('[data-k="constructionStart"]').addEventListener('input', updateCodDisplay);
+  $('[data-k="constructionMonths"]').addEventListener('input', updateCodDisplay);
   $('[data-k="constructionMonths"]').addEventListener('change', buildSpendCurve);
   $('[data-k="capexEok"]').addEventListener('change', buildSpendCurve);
   $('[data-k="capexEok"]').addEventListener('input', function () { if ($('[data-k="equityRatioPct"]').value !== '') syncEquityRatio(true); });
