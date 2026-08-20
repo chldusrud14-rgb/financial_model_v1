@@ -448,19 +448,20 @@
 
   function buildTrancheGrid() {
     var box = $('#trbox');
+    box.innerHTML = ''; // × 삭제로 재호출될 때 이전 표가 안 지워지고 쌓이던 버그 방지
     var t = el('table', 'tr');
     // 열 폭을 고정 배분 — "트랜치"(선순위A 등) 라벨이 줄바꿈되던 문제와
     // "방식" 드롭다운(원리금균등 등) 글자가 잘리던 문제를 같이 해결.
     t.innerHTML = '<colgroup>' +
-      '<col style="width:11%"><col style="width:13%"><col style="width:9%">' +
-      '<col style="width:11%"><col style="width:11%"><col style="width:9%">' +
-      '<col style="width:9%"><col style="width:27%">' +
+      '<col style="width:10%"><col style="width:12%"><col style="width:8%">' +
+      '<col style="width:10%"><col style="width:10%"><col style="width:8%">' +
+      '<col style="width:8%"><col style="width:28%"><col style="width:6%">' +
       '</colgroup>' +
       '<thead><tr>' +
       '<th>트랜치</th><th>금액(억원)</th><th>투입순서</th><th>건설금리(%)</th><th>운영금리(%)</th>' +
-      '<th>거치(yr)</th><th>상환(yr)</th><th>방식</th></tr></thead>';
+      '<th>거치(yr)</th><th>상환(yr)</th><th>방식</th><th></th></tr></thead>';
     var tb = document.createElement('tbody');
-    TRANCHES.forEach(function (tr) {
+    TRANCHES.forEach(function (tr, ti) {
       var row = document.createElement('tr');
       var cells = [
         ['name', tr.name, 'text'],
@@ -488,6 +489,18 @@
       sel.dataset.tr = tr.key; sel.dataset.f = 'method';
       mtd.appendChild(sel);
       row.appendChild(mtd);
+      // 해당 없는 트랜치는 지울 수 있게 — 사업자구성/민감도 분석과
+      // 같은 × 버튼 패턴. 최소 1개는 남겨야 함(전부 지우면 부채가
+      // 아예 없는 상태가 돼서 계산 자체는 되지만 UI가 텅 비어버림).
+      var rmTd = document.createElement('td');
+      var rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
+      rm.addEventListener('click', function () {
+        if (TRANCHES.length <= 1) return;
+        TRANCHES.splice(ti, 1);
+        buildTrancheGrid();
+      });
+      rmTd.appendChild(rm); row.appendChild(rmTd);
       tb.appendChild(row);
     });
     t.appendChild(tb);
