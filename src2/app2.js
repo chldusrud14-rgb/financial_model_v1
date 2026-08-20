@@ -310,6 +310,16 @@
     }
     tr.appendChild(cell('text', it.name, 'name'));
     tr.appendChild(cell('number', it.amountEok, 'amountEok'));
+    // MW당 금액은 입력칸이 아니라 위 금액을 설비용량으로 나눈 참고치일
+    // 뿐이다 — 입력 가능한 것처럼 보이면 헷갈리니 입력칸(input) 대신
+    // 회색 텍스트로만 보여준다(원본 Assum!E341 "per MW" 보조열과 같은
+    // 성격, 다만 원본과 반대로 여긴 입력이 아니라 계산 결과 표시).
+    var mwTd = document.createElement('td');
+    var mwSpan = document.createElement('span');
+    mwSpan.className = 'mwref';
+    mwSpan.dataset.opexMwref = idx;
+    mwSpan.textContent = '—';
+    mwTd.appendChild(mwSpan); tr.appendChild(mwTd);
     tr.appendChild(cell('number', it.escal, 'escal'));
     var selTd = document.createElement('td');
     var sel = document.createElement('select');
@@ -335,12 +345,13 @@
     if (!box) return;
     box.innerHTML = '';
     var t = el('table', 'tr');
-    t.innerHTML = '<thead><tr><th>항목</th><th>연간금액(억원/yr)</th><th>상승률(%/yr)</th><th>지급순위</th><th></th></tr></thead>';
+    t.innerHTML = '<thead><tr><th>항목</th><th>연간금액(억원/yr)</th><th>MW당(참고)</th><th>상승률(%/yr)</th><th>지급순위</th><th></th></tr></thead>';
     var tb = document.createElement('tbody');
     OPEX_ITEMS.forEach(function (it, idx) { tb.appendChild(opexItemRow(it, idx)); });
     t.appendChild(tb);
     box.appendChild(t);
     box.appendChild(el('div', 'trlegend',
+      '<b>MW당</b>: 입력칸이 아니라 왼쪽 금액을 위 "설비용량"으로 나눈 참고치입니다(자동 계산, 직접 입력 불가). ' +
       '<b>선순위</b>: 원리금 상환 전에 먼저 빠지는 비용 — 이 비용이 많을수록 원리금 상환여력(DSCR)이 낮게 계산됩니다. ' +
       '<b>후순위</b>: 원리금 상환 후 배당 전에 빠지는 비용 — DSCR 계산엔 영향 없음. 기본값은 전부 선순위입니다.'));
     var addBtn = document.createElement('button');
@@ -354,6 +365,18 @@
     var sum = el('div', 'spendsum'); sum.id = 'opexItemSum';
     box.appendChild(sum);
     updateOpexItemSum();
+  }
+
+  // 항목별 금액을 위 "설비용량"으로 나눈 MW당 참고치를 새로고침한다 —
+  // 항목 금액이 바뀌거나 설비용량이 바뀔 때마다 호출.
+  function updateOpexMWRefs() {
+    var capMW = Number(($('[data-k="capacityMW"]') || {}).value) || 0;
+    Array.prototype.slice.call(document.querySelectorAll('#opexItemBox [data-opex-mwref]')).forEach(function (span) {
+      var idx = span.dataset.opexMwref;
+      var amtEl = document.querySelector('#opexItemBox [data-opex-f="amountEok"][data-opex-idx="' + idx + '"]');
+      var amt = amtEl && amtEl.value !== '' ? Number(amtEl.value) : null;
+      span.textContent = (amt != null && capMW > 0) ? (amt / capMW).toFixed(3) + '억원/MW' : '—';
+    });
   }
 
   function readOpexItemsDetailed() {
@@ -382,6 +405,7 @@
       opexEl.value = sum.toFixed(2);
       opexEl.dispatchEvent(new Event('change', { bubbles: true }));
     }
+    updateOpexMWRefs();
   }
 
   function toggleOpexDetail(on) {
@@ -1103,6 +1127,7 @@
   $('#capexItemBox').addEventListener('input', updateCapexItemSum);
   $('#opexDetailToggle').addEventListener('change', function (e) { toggleOpexDetail(e.target.checked); });
   $('#opexItemBox').addEventListener('input', updateOpexItemSum);
+  $('[data-k="capacityMW"]').addEventListener('input', updateOpexMWRefs);
   $('#shAdd').addEventListener('click', function () {
     SHAREHOLDERS.push({ name: '출자자' + (SHAREHOLDERS.length + 1), stakePct: 0 });
     buildShareholderGrid();
