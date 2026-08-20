@@ -163,7 +163,7 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
 .warnbox{background:#FBF3EC;border:1px solid #EBD3BB;color:#8A5225;border-radius:10px;padding:11px 13px;font-size:12px;margin-bottom:14px}
 
 /* 예시값 불러오기 배너 — 카드 여러 개(사업 기본가정/트랜치/총사업비
-   지출곡선 등)를 한 번에 채우는 동작이라 특정 카드 안이 아니라 전체
+   지출 스케줄 등)를 한 번에 채우는 동작이라 특정 카드 안이 아니라 전체
    폼 위에 독립된 배너로 둔다. */
 .exampleBar{display:flex;align-items:center;justify-content:space-between;gap:20px;
   background:linear-gradient(135deg,var(--brand-l),#fff 75%);border:1px solid #CFE7DA;
@@ -193,7 +193,7 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
   <div class="exampleBar">
     <div class="exampleBar-text">
       <b>입력할 값이 많아 막막하신가요?</b>
-      <span>예시값을 불러오면 아래 모든 항목(사업 기본가정·트랜치·총사업비 지출곡선 등)이 실제 프로젝트 값으로 채워져서 바로 결과를 볼 수 있습니다. 이후 숫자를 하나라도 고치면 그 순간부터 고친 값 기준으로 다시 계산됩니다.</span>
+      <span>예시값을 불러오면 아래 모든 항목(사업 기본가정·트랜치·총사업비 지출 스케줄 등)이 실제 프로젝트 값으로 채워져서 바로 결과를 볼 수 있습니다. 이후 숫자를 하나라도 고치면 그 순간부터 고친 값 기준으로 다시 계산됩니다.</span>
     </div>
     <button class="btn accent" id="loadDangjin">예시 불러오기 (당진1, 100MW급 PJT)</button>
   </div>
@@ -217,7 +217,7 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
       </div>
 
       <div class="card">
-        <div class="hd"><span class="badge">3</span><h4>총사업비 지출 곡선</h4>
+        <div class="hd"><span class="badge">3</span><h4>총사업비 지출 스케줄</h4>
           <button class="btn ghost" id="spendReset" style="margin-left:auto">균등분배로 재설정</button>
         </div>
         <div class="hint">공사기간(분기)마다 위 "총사업비"가 실제 얼마씩 나가는지 입력합니다. 보통 공사 초반·후반에 몰리는데, 잘 모르면 균등분배로 두면 됩니다. DSRA는 준공분기에 별도로 조달돼서 여기 포함 안 합니다.</div>
