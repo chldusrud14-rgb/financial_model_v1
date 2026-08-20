@@ -85,6 +85,16 @@ table.tr th:first-child,table.tr td:first-child{text-align:left;font-weight:700}
 table.tr td input:focus,table.tr td select:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(46,125,98,.12);background:#fff}
 .trlegend{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6}
 .trlegend b{color:var(--ink2);font-weight:700}
+/* 트랜치 표 위, "이게 뭔지" 자체를 설명하는 도입부 — 아래 trlegend는
+   표 안 용어(투입순서/거치 등) 설명이라 성격이 다름 */
+.trintro{background:var(--brand-l);border-radius:10px;padding:11px 13px;margin-bottom:12px;font-size:12px;color:var(--ink2);line-height:1.6}
+.trintro b{display:block;color:var(--brand-d);font-weight:800;margin-bottom:3px}
+.trintro b:nth-of-type(2),.trintro b:nth-of-type(3){display:inline;margin-bottom:0}
+/* 트랜치 표는 colgroup으로 열 폭을 직접 배분하므로 table-layout:fixed로
+   그 비율을 그대로 지키게 한다(auto면 브라우저가 내용에 맞춰 다시
+   늘려서 "선순위A"가 줄바꿈되거나 "방식" 드롭다운이 잘리는 문제가 있었음). */
+#trbox table.tr{table-layout:fixed}
+#trbox table.tr td:first-child{white-space:nowrap}
 
 .spendrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .spendrow .f{flex:1;min-width:90px}
@@ -233,6 +243,10 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
         </div>
         <div class="hint">보통 선순위 트랜치 1~2개만 채우고 나머지는 금액 0으로 두면 됩니다. "투입순서"가 같은 트랜치는 금액 비례로 동시에 인출됩니다. 트랜치 조건을 잘 모르면 "간편설정"으로 부채 전액을 표준 조건 하나로 묶어서 대략적인 결과부터 볼 수 있습니다.</div>
         <div class="body">
+          <div class="trintro">
+            <b>차입 트랜치가 뭔가요?</b> 한 프로젝트를 하나의 대출로만 조달하지 않고, 조건(금리·상환기간·상환순위)이 서로 다른 여러 "묶음(트랜치)"으로 나눠 빌리는 게 프로젝트 파이낸싱의 일반적인 방식입니다.
+            <b>선순위(A~D)</b>는 원리금을 가장 먼저 받는(그만큼 안전해서 금리가 낮은) 대출이고, <b>후순위</b>는 선순위를 다 갚은 다음에 받는(그만큼 위험해서 금리가 높은) 대출입니다. 자본금은 대출이 아니라 사업자가 직접 출자한 돈입니다.
+          </div>
           <div id="trbox"></div>
           <div class="trlegend">
             <b>투입순서</b>: 숫자가 작을수록 먼저 인출(1=가장 먼저) · <b>거치</b>: 원금 상환 없이 이자만 내는 기간(년) ·

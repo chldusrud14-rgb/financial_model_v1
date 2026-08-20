@@ -449,7 +449,14 @@
   function buildTrancheGrid() {
     var box = $('#trbox');
     var t = el('table', 'tr');
-    t.innerHTML = '<thead><tr>' +
+    // 열 폭을 고정 배분 — "트랜치"(선순위A 등) 라벨이 줄바꿈되던 문제와
+    // "방식" 드롭다운(원리금균등 등) 글자가 잘리던 문제를 같이 해결.
+    t.innerHTML = '<colgroup>' +
+      '<col style="width:11%"><col style="width:13%"><col style="width:9%">' +
+      '<col style="width:11%"><col style="width:11%"><col style="width:9%">' +
+      '<col style="width:9%"><col style="width:27%">' +
+      '</colgroup>' +
+      '<thead><tr>' +
       '<th>트랜치</th><th>금액(억원)</th><th>투입순서</th><th>건설금리(%)</th><th>운영금리(%)</th>' +
       '<th>거치(yr)</th><th>상환(yr)</th><th>방식</th></tr></thead>';
     var tb = document.createElement('tbody');
