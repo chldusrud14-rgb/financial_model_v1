@@ -160,6 +160,18 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
 
 .note{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
 .warnbox{background:#FBF3EC;border:1px solid #EBD3BB;color:#8A5225;border-radius:10px;padding:11px 13px;font-size:12px;margin-bottom:14px}
+
+/* 예시값 불러오기 배너 — 카드 여러 개(사업 기본가정/트랜치/공사비 곡선
+   등)를 한 번에 채우는 동작이라 특정 카드 안이 아니라 전체 폼 위에
+   독립된 배너로 둔다. */
+.exampleBar{display:flex;align-items:center;justify-content:space-between;gap:20px;
+  background:linear-gradient(135deg,var(--brand-l),#fff 75%);border:1px solid #CFE7DA;
+  border-radius:14px;padding:16px 20px;margin-bottom:22px;flex-wrap:wrap}
+.exampleBar-text{flex:1;min-width:260px}
+.exampleBar-text b{display:block;font-size:14px;color:var(--brand-d);margin-bottom:4px}
+.exampleBar-text span{display:block;font-size:12px;color:var(--ink2);line-height:1.55}
+.exampleBar .btn{flex:0 0 auto;white-space:nowrap}
+@media (max-width:700px){.exampleBar{flex-direction:column;align-items:stretch}.exampleBar .btn{width:100%}}
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--deep);color:#fff;padding:12px 20px;border-radius:11px;font-size:13px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.2);transition:.25s;pointer-events:none;z-index:99}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 @media (max-width:980px){.cols{grid-template-columns:1fr}}
@@ -177,13 +189,12 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
     이 화면은 기능 검증용 1차 버전입니다. 상환방식은 원금균등(1)/원리금균등(2)만 입력 가능합니다.
   </div>
 
-  <div id="adminPresetBlock" style="display:none;flex-direction:column;gap:10px;margin-bottom:18px">
-    <div class="warnbox" style="margin-bottom:0">
-      64회차 직접 키인(방식 3)은 아래 "당진 FS 불러오기"로만 채워집니다(직접 입력 UI는 아직 없음).
-      기본값(빈 폼)으로 그냥 생성을 누르면 당진 실측치와 다른 숫자가 나옵니다 — 당진 원본과 동일한
-      숫자를 보려면 반드시 "당진 FS 불러오기"를 먼저 누르세요.
+  <div class="exampleBar">
+    <div class="exampleBar-text">
+      <b>입력할 값이 많아 막막하신가요?</b>
+      <span>예시값을 불러오면 아래 모든 항목(사업 기본가정·트랜치·공사비 곡선 등)이 실제 프로젝트 값으로 채워져서 바로 결과를 볼 수 있습니다. 이후 숫자를 하나라도 고치면 그 순간부터 고친 값 기준으로 다시 계산됩니다.</span>
     </div>
-    <button class="btn ghost" id="loadDangjin" style="align-self:flex-start">당진 FS 불러오기 (원본 검증값)</button>
+    <button class="btn accent" id="loadDangjin">예시 불러오기 (당진1, 100MW급 PJT)</button>
   </div>
 
   <div class="cols">

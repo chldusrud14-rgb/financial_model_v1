@@ -943,7 +943,7 @@
     usingPreset = true;
     suppressDirty = false;
     updateCodDisplay();
-    toast('당진 FS 실측치를 불러왔습니다 — 이제 "생성"을 누르면 검증된 원본과 동일한 숫자가 나옵니다');
+    toast('예시값(당진1, 100MW급 PJT)을 불러왔습니다 — 바로 "생성"을 눌러보시거나, 숫자를 고쳐가며 시나리오를 만들어보세요');
   }
 
   var model = null;
@@ -1133,13 +1133,11 @@
     });
   }
 
-  // 당진 FS 프리셋 버튼은 "엔진 검증용" 기능이라 일반 사용자에게는
-  // 혼란만 준다는 피드백으로 기본 숨김 처리 — URL에 ?admin을 붙이면
-  // (예: 파일명.html?admin) 버튼과 관련 설명이 다시 보인다.
-  if (/[?&]admin(=|&|$)/.test(location.search)) {
-    var presetBlock = $('#adminPresetBlock'); if (presetBlock) presetBlock.style.display = 'flex';
-    var sensHint = $('#adminSensHint'); if (sensHint) sensHint.style.display = 'inline';
-  }
+  // 예시 불러오기 버튼을 다시 전체 공개로 되돌리면서(빠른 시작용으로
+  // 재해석), 민감도 카드의 "프리셋 상태에선 의미 없음" 안내도 같이
+  // 보이게 한다 — 이제 누구나 누를 수 있는 버튼이라 그 주의사항도
+  // 다시 필요함.
+  var sensHint = $('#adminSensHint'); if (sensHint) sensHint.style.display = 'inline';
 
   buildCore();
   buildTrancheGrid();
