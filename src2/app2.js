@@ -556,6 +556,16 @@
   function buildShareholderGrid() {
     var box = $('#shbox');
     box.innerHTML = '';
+    // 입력칸 위에 "출자자명"/"지분율" 열 제목을 달아준다 — 아래 행과
+    // 같은 flex 비율(1.4/0.7)로 맞추고, unit·삭제버튼 자리만큼 빈 칸을
+    // 채워서 좌우 정렬이 어긋나지 않게 한다.
+    var head = el('div', 'shrow shrow-head');
+    head.appendChild(el('span', 'shrow-label', '출자자명'));
+    head.appendChild(el('span', 'shrow-label', '지분율'));
+    head.appendChild(el('span', 'unit', ''));
+    var spacer = el('span'); spacer.style.width = '30px'; spacer.style.flex = '0 0 auto';
+    head.appendChild(spacer);
+    box.appendChild(head);
     SHAREHOLDERS.forEach(function (sh, idx) { box.appendChild(shRow(sh, idx)); });
     updateShareholderSum();
   }
