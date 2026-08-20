@@ -275,7 +275,7 @@
     if (!box) return;
     box.innerHTML = '';
     var t = el('table', 'tr');
-    t.innerHTML = '<thead><tr><th>항목</th><th>금액(억원)</th><th></th></tr></thead>';
+    t.innerHTML = '<thead><tr><th>항목</th><th>금액<br>(억원)</th><th></th></tr></thead>';
     var tb = document.createElement('tbody');
     CAPEX_ITEMS.forEach(function (it, idx) { tb.appendChild(capexItemRow(it, idx)); });
     t.appendChild(tb);
@@ -375,7 +375,7 @@
     if (!box) return;
     box.innerHTML = '';
     var t = el('table', 'tr');
-    t.innerHTML = '<thead><tr><th>항목</th><th>연간금액(억원/yr)</th><th>MW당(참고)</th><th>상승률(%/yr)</th><th>지급순위</th><th></th></tr></thead>';
+    t.innerHTML = '<thead><tr><th>항목</th><th>연간금액<br>(억원/yr)</th><th>MW당<br>(참고)</th><th>상승률<br>(%/yr)</th><th>지급<br>순위</th><th></th></tr></thead>';
     var tb = document.createElement('tbody');
     OPEX_ITEMS.forEach(function (it, idx) { tb.appendChild(opexItemRow(it, idx)); });
     t.appendChild(tb);
