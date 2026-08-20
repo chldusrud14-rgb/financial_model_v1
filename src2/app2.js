@@ -49,7 +49,7 @@
     { k: 'constructionStart', label: '착공시점', type: 'text', def: '2024-06', unit: 'YYYY-MM', group: '발전소 특성' },
     { k: 'constructionMonths', label: '공사기간', type: 'number', def: 16, unit: 'Month', group: '발전소 특성' },
     { k: 'codDisplay', label: '준공시점(COD, 자동계산)', type: 'display', group: '발전소 특성',
-      hint: '착공시점+공사기간으로 자동 계산됩니다 — 직접 입력하는 칸이 아닙니다(원본 당진 엑셀의 "준공시점"도 같은 방식의 수식 셀입니다).' },
+      hint: '착공시점+공사기간으로 자동 계산됩니다 — 직접 입력하는 칸이 아닙니다.' },
     { k: 'operationYears', label: '운영기간', type: 'number', def: 20, unit: 'Year', group: '발전소 특성' },
 
     { k: 'dsraEok', label: '최초 DSRA', type: 'number', def: 50, unit: '억원', group: '재원조달·감가상각',
