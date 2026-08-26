@@ -275,7 +275,43 @@
         IN_ADDR.opexEscal = kv('운영비 에스컬레이션[%/yr]', inp.opexEscal, '0.00');
         IN_ADDR.opexSubShare = kv('운영비 중 후순위 비중[%]', inp.opexSubShare || 0, '0.00');
       }
+      IN_ADDR.agentFeeKRWm = kv('대리은행수수료(총액)[KRWm]', inp.agentFeeKRWm || 0, FMT_M);
+      IN_ADDR.extraTaxDeductionKRWm = kv('기타 비현금 세무손금(총액)[KRWm]', inp.extraTaxDeductionKRWm || 0, FMT_M);
       r += 1;
+
+      section(ws, r, '법인세 가정'); r += 2;
+      IN_ADDR.taxFlat = inp.taxMode === 1 ? null : kv('법인세율(단일)[%]', inp.taxFlat || 0, '0.00');
+      IN_ADDR.lossRate = kv('이월결손금 공제한도[%]', inp.lossRate != null ? inp.lossRate : 100, '0.00');
+      IN_ADDR.amtRate = kv('최저한세율[%]', inp.amtRate || 0, '0.00');
+      IN_ADDR.investmentCreditRate = kv('통합투자세액공제율[%]', inp.investmentCreditRate || 0, '0.00');
+      IN_ADDR.localSurtaxRate = kv('지방소득세율(법인세 대비)[%]', inp.localSurtaxRate || 0, '0.00');
+      IN_ADDR.creditSurtaxRate = kv('세액공제 농특세율[%]', inp.creditSurtaxRate || 0, '0.00');
+      r += 1;
+
+      // 건설기간 손실(연도별)·통합투자세액공제 기준액(연도별) — 연도를 키로 하는
+      // 작은 표라서 항목명에 연도를 그대로 쓴다.
+      function yearTable(title2, obj, addrKey) {
+        var years = Object.keys(obj || {});
+        if (!years.length) return;
+        section(ws, r, title2); r += 2;
+        ['연도', '금액[KRWm]'].forEach(function (h, idx) {
+          var cc = ws.getCell(colLetter(2 + idx) + r);
+          cc.value = h; cc.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+          cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+          cc.alignment = { horizontal: 'center' };
+        });
+        r++;
+        IN_ADDR[addrKey] = {};
+        years.forEach(function (y) {
+          put(ws, 'B' + r, Number(y), '0', { fill: INPUT_FILL });
+          put(ws, 'C' + r, obj[y], FMT_M, { fill: INPUT_FILL });
+          IN_ADDR[addrKey][y] = 'C' + r;
+          r++;
+        });
+        r += 1;
+      }
+      yearTable('건설기간 손실(연도별)', inp.preOpLossByYear, 'preOpLossByYear');
+      yearTable('통합투자세액공제 기준액(연도별)', inp.investmentCreditBaseByYear, 'investmentCreditBaseByYear');
 
       if (inp.tariffTracks && inp.tariffTracks.length) {
         section(ws, r, '판매단가 트랙 (PPA/SMP+REC 등)'); r += 2;
@@ -428,6 +464,22 @@
           ['decomAccrual', '복구충당부채 전입액(실측)', '[KRWm]', FMT_M, function (n) {
             var ovr = ovrByEnd[periods[n].endStr];
             return ovr ? ovr.decomAccrual : null;
+          }],
+          ['agentFee', '대리은행수수료(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr ? ovr.agentFee : null;
+          }],
+          ['extraTaxDed', '기타 비현금 세무손금(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr ? ovr.extraTaxDed : null;
+          }],
+          ['taxCash', '현금기준 법인세(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr && ovr.taxCash != null ? ovr.taxCash : null;
+          }],
+          ['dsraFcfe', 'DSRA FCFE 조정(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr && ovr.dsraFcfe != null ? ovr.dsraFcfe : null;
           }]
         ].forEach(function (spec) {
           var key = spec[0], label2 = spec[1], unit = spec[2], fmt = spec[3], getter = spec[4];
@@ -867,6 +919,7 @@
 
       // 새로 계산하지 않고 Revenue 시트를 그대로 참조한다(Revenue 시트의
       // 12행 "영업수익"이 이미 값/수식을 다 가지고 있음 — 로직 중복 방지).
+      var revRowIS = r;
       label(ws, r, '영업수익', '[KRWm]', { bold: true });
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "'Revenue'!" + pc(n) + '12', FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
@@ -893,15 +946,19 @@
           label(ws, r, it.name, '[KRWm]', { indent: true }); r++;
         });
       }
+      var opexTotalRowIS = r;
       label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "-'Opex'!" + pc(n) + OPEX_TOTAL_ROW, FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       r++;
+      var ebitdaRow = r;
       label(ws, r, 'EBITDA', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, r, function (n) { return rows[n].ebitda; }, FMT_M, { bold: true }); r++;
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + revRowIS + '+' + pc(n) + opexTotalRowIS, FMT_M, { bold: true });
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       label(ws, r, 'EBITDA 마진', '[%]');
       fillPeriods(ws, r, function (n) { return rows[n].revenue > 0 ? rows[n].ebitda / rows[n].revenue : null; }, FMT_P, { noSum: true }); r++;
       r++;
+      var depRow = r;
       label(ws, r, '감가상각비', '[KRWm]');
       // 상각대상액/내용연수 기준 정액법 — 감가상각 판정(어느 분기가 상각
       // 대상인지)은 이 시점의 내용연수를 기준으로 정해지는 구조적 사실이라
@@ -917,6 +974,7 @@
       }
       putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
 
+      var decomRow = r;
       label(ws, r, '복구충당부채 전입액', '[KRWm]');
       var opPeriodCountIS = periods.filter(function (p) { return p.isOp; }).length;
       for (var n = 0; n < N; n++) {
@@ -925,12 +983,50 @@
         } else put(ws, pc(n) + r, -(rows[n].decomAccrual || 0), FMT_M);
       }
       putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
+
+      // "기타 비현금 세무손금"(선납임대료 상각액 등)과 "대리은행수수료"는
+      // 원본 순서대로 EBIT 위(EBITDA와 EBIT 사이)에서 빠진다 — 예전엔
+      // 대리은행수수료를 이자비용 밑(EBT 바로 위)에 표시해서 실제 계산
+      // 순서(EBIT 자체에 이미 반영됨)와 화면 배치가 어긋나 있었다.
+      var extraTaxDedRow = r;
+      label(ws, r, '기타 비현금 세무손금', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        if (isOpNonOverride(n)) {
+          putF(ws, pc(n) + r, '-(' + IN + IN_ADDR.extraTaxDeductionKRWm + '/' + opPeriodCountIS + ')', FMT_M);
+        } else if (ovrByEnd[periods[n].endStr]) {
+          putF(ws, pc(n) + r, '-' + IN + pc(n) + IN_ADDR.ovr.extraTaxDed, FMT_M);
+        } else {
+          put(ws, pc(n) + r, 0, FMT_M);
+        }
+      }
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
+
+      var agentFeeRow = r;
+      label(ws, r, '대리은행수수료', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        if (isOpNonOverride(n)) {
+          putF(ws, pc(n) + r, '-(' + IN + IN_ADDR.agentFeeKRWm + '/' + opPeriodCountIS + ')', FMT_M);
+        } else if (ovrByEnd[periods[n].endStr]) {
+          putF(ws, pc(n) + r, '-' + IN + pc(n) + IN_ADDR.ovr.agentFee, FMT_M);
+        } else {
+          put(ws, pc(n) + r, 0, FMT_M);
+        }
+      }
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
+
+      var ebitRow = r;
       label(ws, r, '영업이익(EBIT)', '[KRWm]', { bold: true });
-      fillPeriods(ws, r, function (n) { return rows[n].ebit; }, FMT_M, { bold: true }); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r,
+          [ebitdaRow, depRow, decomRow, extraTaxDedRow, agentFeeRow].map(function (rr) { return pc(n) + rr; }).join('+'),
+          FMT_M, { bold: true });
+      }
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       label(ws, r, '영업이익률', '[%]');
       fillPeriods(ws, r, function (n) { return rows[n].revenue > 0 ? rows[n].ebit / rows[n].revenue : null; }, FMT_P, { noSum: true }); r++;
       r++;
 
+      var intTotalRowIS;
       if (trancheInterest.length) {
         // 새로 계산하지 않고 Debt 시트의 트랜치별 이자 행을 그대로 참조한다
         // (Debt 시트 자체가 이미 "입력값"을 참조하는 수식이므로, 여기서
@@ -947,21 +1043,25 @@
           }
           r++;
         });
+        intTotalRowIS = r;
         label(ws, r, '이자비용 합계', '[KRWm]', { bold: true });
         fillPeriods(ws, r, function (n) { return -rows[n].interest; }, FMT_M, { bold: true }); r++;
       } else {
+        intTotalRowIS = r;
         label(ws, r, '이자비용', '[KRWm]');
         fillPeriods(ws, r, function (n) { return -rows[n].interest; }, FMT_M); r++;
       }
-      label(ws, r, '대리은행수수료', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return -(rows[n].agentFee || 0); }, FMT_M); r++;
       r++;
+      var ebtRow = r;
       label(ws, r, '법인세차감전순이익', '[KRWm]', { bold: true });
-      fillPeriods(ws, r, function (n) { return rows[n].ebt; }, FMT_M, { bold: true }); r++;
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + ebitRow + '+' + pc(n) + intTotalRowIS, FMT_M, { bold: true });
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
+      var taxRow = r;
       label(ws, r, '법인세비용', '[KRWm]');
       fillPeriods(ws, r, function (n) { return -rows[n].tax; }, FMT_M); r++;
       label(ws, r, '당기순이익', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, r, function (n) { return rows[n].ni; }, FMT_M, { bold: true }); r++;
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + ebtRow + '+' + pc(n) + taxRow, FMT_M, { bold: true });
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
 
       if (opexRows) {
         r++;
