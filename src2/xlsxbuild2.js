@@ -1057,11 +1057,119 @@
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + ebitRow + '+' + pc(n) + intTotalRowIS, FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       var taxRow = r;
-      label(ws, r, '법인세비용', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return -rows[n].tax; }, FMT_M); r++;
+      label(ws, r, '법인세비용', '[KRWm]'); r++; // 데이터는 연도별 산출 표를 만든 뒤 아래서 채운다
       label(ws, r, '당기순이익', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + ebtRow + '+' + pc(n) + taxRow, FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
+
+      /* =========================================================
+         연도별 법인세 산출 — 이월결손금·통합투자세액공제(10년 이월)·
+         최저한세(AMT)를 연도 단위로 체인 수식화한다(Debt 시트의
+         "기초잔액=직전 기말잔액"과 같은 방식 — 반복계산이 아니라 그냥
+         직전 열을 참조하는 체인이라 수식화 가능). 분기별 법인세는 그
+         연도 법인세를 "그 분기 양수EBT / 그 해 양수EBT합" 비중으로
+         비례배분한다(오버라이드 없는 세계에서는 이 자체가 정확한 값).
+         ========================================================= */
+      r += 2;
+      var taxSectionTitleRow = r;
+      section(ws, r, '연도별 법인세 산출'); r += 2;
+      // 분기 -> 연도 매핑, 연도 목록(구간 전체 + preOpLossByYear/투자세액공제
+      // 연도까지 포함해 JS 엔진의 Object.keys(yrEBT)와 동일하게 구성)
+      var yearSet = {};
+      periods.forEach(function (p) { yearSet[p.year] = true; });
+      Object.keys(inp.preOpLossByYear || {}).forEach(function (y) { yearSet[y] = true; });
+      Object.keys(inp.investmentCreditBaseByYear || {}).forEach(function (y) { yearSet[y] = true; });
+      var years = Object.keys(yearSet).map(Number).sort(function (a, b) { return a - b; });
+      var lastOpIdx = -1;
+      periods.forEach(function (p, i) { if (p.isOp) lastOpIdx = i; });
+
+      // 분기별 "세무상 과세표준" 행 — 회계상 EBT에 복구충당부채(비현금,
+      // 세무상 손금 아님)를 되돌리고, 실제 철거비 현금지출(마지막
+      // 운영분기에만)만 손금 반영한다.
+      var taxableRow = r;
+      label(ws, r, '세무상 과세표준(분기, 연간집계용)', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        var cashDecomF = (n === lastOpIdx) ? IN + IN_ADDR.decomEok + '*100' : '0';
+        putF(ws, pc(n) + r, pc(n) + ebtRow + '-' + pc(n) + decomRow + '-(' + cashDecomF + ')', FMT_M);
+      }
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r += 2;
+
+      var yc = C0; // 연도 열은 분기 열과 같은 시작열(E)을 재사용 — 아래쪽 별도 구간
+      var yearCol = {}; // year -> column letter
+      years.forEach(function (y, yi) { yearCol[y] = colLetter(yc + yi); });
+
+      function yearLabelRow(text) { label(ws, r, text, null); }
+      // 연도 헤더
+      label(ws, r, '연도', null);
+      years.forEach(function (y) { put(ws, yearCol[y] + r, y, '0', { bold: true }); });
+      r++;
+      var taxableYrRow = r;
+      label(ws, r, '과세표준(연간, 손실이월 전)', '[KRWm]');
+      years.forEach(function (y) {
+        var qCols = [];
+        periods.forEach(function (p, n) { if (p.year === y) qCols.push(pc(n) + taxableRow); });
+        var lossAddr = (IN_ADDR.preOpLossByYear && IN_ADDR.preOpLossByYear[y]) ? ('-' + IN + IN_ADDR.preOpLossByYear[y]) : '';
+        putF(ws, yearCol[y] + r, qCols.join('+') + lossAddr, FMT_M);
+      });
+      r++;
+      var carryPrevRow = r; label(ws, r, '직전 이월결손금(기초)', '[KRWm]'); r++;
+      var dedRow = r; label(ws, r, '당해 결손금 공제액', '[KRWm]'); r++;
+      var carryNewRow = r; label(ws, r, '이월결손금(기말)', '[KRWm]'); r++;
+      var baseRow = r; label(ws, r, '과세표준(공제후)', '[KRWm]'); r++;
+      var grossTaxRow = r; label(ws, r, '산출세액', '[KRWm]'); r++;
+      var amtRow = r; label(ws, r, '최저한세', '[KRWm]'); r++;
+      var creditPoolPrevRow = r; label(ws, r, '직전 세액공제 잔액(기초)', '[KRWm]'); r++;
+      var newCreditRow = r; label(ws, r, '당해 신규 세액공제', '[KRWm]'); r++;
+      var afterCreditRow = r; label(ws, r, '공제후 세액', '[KRWm]'); r++;
+      var taxFinalRow = r; label(ws, r, '최종 산출세액(MAX)', '[KRWm]'); r++;
+      var creditUsedRow = r; label(ws, r, '세액공제 사용액', '[KRWm]'); r++;
+      var creditPoolNewRow = r; label(ws, r, '세액공제 잔액(기말)', '[KRWm]'); r++;
+      var taxByYearRow = r; label(ws, r, '법인세비용(연간)', '[KRWm]', { bold: true }); r++;
+      var yrPosRow = r; label(ws, r, '양수 EBT 합(연간, 분기배분용)', '[KRWm]'); r++;
+
+      var grossTaxF = inp.taxMode === 1
+        ? function (baseExpr) {
+          return 'MIN(MAX(' + baseExpr + ',0),200)*0.09' +
+            '+MIN(MAX(' + baseExpr + '-200,0),19800)*0.19' +
+            '+MIN(MAX(' + baseExpr + '-20000,0),280000)*0.21' +
+            '+MAX(' + baseExpr + '-300000,0)*0.24';
+        }
+        : function (baseExpr) { return '(' + baseExpr + ')*' + IN + IN_ADDR.taxFlat + '/100'; };
+
+      years.forEach(function (y, yi) {
+        var c = yearCol[y];
+        var prevC = yi > 0 ? yearCol[years[yi - 1]] : null;
+        putF(ws, c + carryPrevRow, prevC ? (prevC + carryNewRow) : '0', FMT_M);
+        putF(ws, c + dedRow, 'IF(' + c + taxableYrRow + '<=0,0,MIN(' + c + carryPrevRow + ',' + c + taxableYrRow + '*' + IN + IN_ADDR.lossRate + '/100))', FMT_M);
+        putF(ws, c + carryNewRow, 'IF(' + c + taxableYrRow + '<=0,' + c + carryPrevRow + '-' + c + taxableYrRow + ',' + c + carryPrevRow + '-' + c + dedRow + ')', FMT_M);
+        putF(ws, c + baseRow, 'MAX(0,' + c + taxableYrRow + '-' + c + dedRow + ')', FMT_M);
+        putF(ws, c + grossTaxRow, 'IF(' + c + taxableYrRow + '<=0,0,' + grossTaxF(c + baseRow) + ')', FMT_M);
+        putF(ws, c + amtRow, c + baseRow + '*' + IN + IN_ADDR.amtRate + '/100', FMT_M);
+        putF(ws, c + creditPoolPrevRow, prevC ? (prevC + creditPoolNewRow) : '0', FMT_M);
+        var creditBaseAddr = (IN_ADDR.investmentCreditBaseByYear && IN_ADDR.investmentCreditBaseByYear[y]) ? (IN + IN_ADDR.investmentCreditBaseByYear[y]) : '0';
+        putF(ws, c + newCreditRow, '(' + creditBaseAddr + ')*' + IN + IN_ADDR.investmentCreditRate + '/100', FMT_M);
+        putF(ws, c + afterCreditRow, 'MAX(0,' + c + grossTaxRow + '-(' + c + creditPoolPrevRow + '+' + c + newCreditRow + '))', FMT_M);
+        putF(ws, c + taxFinalRow, 'IF(' + c + taxableYrRow + '<=0,0,MAX(' + c + amtRow + ',' + c + afterCreditRow + '))', FMT_M);
+        putF(ws, c + creditUsedRow, c + grossTaxRow + '-' + c + taxFinalRow, FMT_M);
+        putF(ws, c + creditPoolNewRow, c + creditPoolPrevRow + '+' + c + newCreditRow + '-' + c + creditUsedRow, FMT_M);
+        putF(ws, c + taxByYearRow, c + taxFinalRow + '*(1+' + IN + IN_ADDR.localSurtaxRate + '/100)+' + c + creditUsedRow + '*' + IN + IN_ADDR.creditSurtaxRate + '/100', FMT_M, { bold: true });
+        var posTerms = [];
+        periods.forEach(function (p, n) { if (p.year === y) posTerms.push('MAX(0,' + pc(n) + ebtRow + ')'); });
+        putF(ws, c + yrPosRow, posTerms.join('+') || '0', FMT_M);
+      });
+      r += 1;
+      ws.getCell('B' + r).value = '※ 이월결손금(공제한도 이내)·세액공제(10년 이월, 통합투자세액공제)·최저한세(MAX)를 원본과 같은 순서로 연도 단위 수식 체인으로 계산합니다(반복계산 아님 — Debt 시트의 "기초잔액=직전 기말잔액"과 같은 방식). 분기별 법인세비용은 이 표의 연간 법인세를 그 분기 양수EBT 비중으로 비례배분합니다.';
+      ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+
+      // 이제 분기별 "법인세비용" 행을 채운다(연도 표를 참조하는 수식).
+      for (var n = 0; n < N; n++) {
+        var p = periods[n];
+        var yc2 = yearCol[p.year];
+        putF(ws, pc(n) + taxRow,
+          'IF(AND(' + pc(n) + ebtRow + '>0,' + yc2 + yrPosRow + '>0),-' + yc2 + taxByYearRow + '*' + pc(n) + ebtRow + '/' + yc2 + yrPosRow + ',0)',
+          FMT_M);
+      }
+      putF(ws, 'D' + taxRow, sumFormula(taxRow), FMT_M);
 
       if (opexRows) {
         r++;
