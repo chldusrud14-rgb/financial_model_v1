@@ -676,10 +676,9 @@
             pc(n) + openRow + '+' + pc(n) + drawRow + '-' + pc(n) + prinRow, FMT_M, { bold: true });
         }
         r = closeRow + 1;
-        var finalBal = closes[N - 1];
         label(ws, r, '미상환 잔액(검증용)', '[KRWm]');
         putF(ws, 'D' + r, lastC + closeRow, FMT_M);
-        put(ws, 'F' + r, Math.abs(finalBal) < 1 ? '완전상환 확인 (OK)' : '경고: 미상환 잔액');
+        putF(ws, 'F' + r, 'IF(ABS(D' + r + ')<1,"완전상환 확인 (OK)","경고: 미상환 잔액")', '@');
         if (canScheduleLink) {
           put(ws, 'H' + r, '※ 방식 3(직접 키인) — 원금상환은 "입력값" 시트의 상환비율 표를 참조하는 수식', null);
           ws.getCell('H' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
