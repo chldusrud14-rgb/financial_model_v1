@@ -98,6 +98,16 @@
       var p = periods[n];
       return !ovrByEnd[p.endStr] && p.isOp;
     }
+    // 오버라이드 분기의 선순위/후순위운영비도 다른 key-in 값들과 마찬가지로
+    // Opex 시트에 직접 박아넣지 않고 "입력값" 시트의 "실측 오버라이드" 표를
+    // 참조하게 한다. 오버라이드가 없는 분기(단순 0)는 그대로 값으로 둔다.
+    function putOpexSeniorOrSub(ws, addr, n, key, fmt) {
+      if (ovrByEnd[periods[n].endStr]) {
+        putF(ws, addr, IN + pc(n) + IN_ADDR.ovr[key], fmt);
+      } else {
+        put(ws, addr, periods[n][key === 'opexSenior' ? 'opexSenior' : 'opexSub'] || 0, fmt);
+      }
+    }
 
     function sheet(name, tab) {
       var ws = wb.addWorksheet(name, {
@@ -356,8 +366,50 @@
         });
       }
 
+      var hasOverride = Object.keys(ovrByEnd).length > 0;
+      if (hasOverride) {
+        // "예시 불러오기"의 분기별 실측치도 결국은 key-in 데이터다(원본
+        // FS에서 뽑아온 값이라는 것만 다르다) — 그래서 Revenue/Opex 시트에
+        // 직접 박아넣지 않고, 다른 입력값처럼 여기 모아두고 그 시트들이
+        // 참조하게 한다. 공식이 없는 분기는 셀을 비워둔다(그 분기만
+        // "그 자체가 정답"이라는 뜻).
+        for (var c = C0; c <= C0 + N - 1; c++) ws.getColumn(c).width = 11;
+        r += 1;
+        section(ws, r, '실측 오버라이드 ("예시 불러오기" 전용 — 공식이 아니라 원본 FS의 분기별 실제값)'); r += 2;
+        periodHeader(ws, r); r += 2;
+        IN_ADDR.ovr = {};
+        [
+          ['price', '판매단가(실측)', '[원/kWh]', '#,##0.0', function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            if (!ovr || !(periods[n].gen > 0)) return null;
+            return ovr.revenue / periods[n].gen * 1000;
+          }],
+          ['opexSenior', '선순위운영비(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr ? ovr.opexSenior : null;
+          }],
+          ['opexSub', '후순위운영비(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr ? ovr.opexSub : null;
+          }],
+          ['decomAccrual', '복구충당부채 전입액(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr ? ovr.decomAccrual : null;
+          }]
+        ].forEach(function (spec) {
+          var key = spec[0], label2 = spec[1], unit = spec[2], fmt = spec[3], getter = spec[4];
+          label(ws, r, label2, unit);
+          for (var n = 0; n < N; n++) {
+            var v = getter(n);
+            put(ws, pc(n) + r, v, fmt, v != null ? { fill: INPUT_FILL } : {});
+          }
+          IN_ADDR.ovr[key] = r;
+          r++;
+        });
+      }
+
       r += 1;
-      ws.getCell('B' + r).value = '※ 노란색 셀 = 화면에서 직접 key-in한 입력값(재무모델링 관례). 세금·최저한세·배당가능이익 캡 등 IS(Q)/CF(Q)의 계산 결과는 반복계산·조건부 누적 로직이 얽혀 있어 여기 대상이 아니며 값(baked) 기준입니다. "예시 불러오기"로 채운 실측 오버라이드 분기도 공식이 아니라 실측 사실이라 수식화 대상이 아닙니다.';
+      ws.getCell('B' + r).value = '※ 노란색 셀 = 화면에서 직접 key-in했거나("예시 불러오기"의 실측치 포함) 그에 준하는 입력값(재무모델링 관례). 세금·최저한세·배당가능이익 캡 등 IS(Q)/CF(Q)의 계산 결과는 반복계산·조건부 누적 로직이 얽혀 있어 여기 대상이 아니며 값(baked) 기준입니다.';
       ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
     })();
 
@@ -622,13 +674,13 @@
         if (ovr) {
           // 오버라이드 분기(실측치) — "매출 숫자를 통째로 박아넣지 말고
           // 발전량×단가로 계산되게 해달라"는 요청 반영. 실측 사실 자체는
-          // "그 분기의 실제 정산단가"이고(발전량 0이면 정의 불가라 0으로
-          // 폴백), 매출은 다른 분기와 완전히 동일하게 발전량×단가/1000
-          // 수식으로 계산한다 — 값은 원본과 그대로 일치(단가 자체가
-          // 실측 매출/발전량이므로), 셀 구조만 나머지 분기와 통일된다.
+          // "그 분기의 실제 정산단가"이고, 그 값 자체도 다른 key-in
+          // 입력들과 마찬가지로 "입력값" 시트("실측 오버라이드" 표)에
+          // 두고 여기서는 그 셀을 참조만 한다. 매출은 다른 분기와 완전히
+          // 동일하게 발전량×단가/1000 수식으로 계산한다 — 값은 원본과
+          // 그대로 일치(단가 자체가 실측 매출/발전량이므로).
           anyOverride = true;
-          var impliedPrice = rows[n].revenue && periods[n].gen > 0 ? rows[n].revenue / periods[n].gen * 1000 : 0;
-          put(ws, pc(n) + 10, impliedPrice, '#,##0.0');
+          putF(ws, pc(n) + 10, IN + pc(n) + IN_ADDR.ovr.price, '#,##0.0');
           putF(ws, pc(n) + 12, pc(n) + '9*' + pc(n) + '10/1000', FMT_M, { bold: true });
         } else if (hasTracks) {
           // 트랙별(SMP+REC/PPA 등) 입력 — 매출 = 발전량×Σ(트랙비중×트랙단가)/1000,
@@ -699,17 +751,18 @@
         var seniorIdx = inp.opexItems.map(function (it, i) { return it.senior !== false ? i : -1; }).filter(function (i) { return i >= 0; });
         for (var n = 0; n < N; n++) {
           if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, seniorIdx.map(function (i) { return '-' + pc(n) + itemRows[i]; }).join('+'), FMT_M);
-          else put(ws, pc(n) + r, periods[n].opexSenior || 0, FMT_M);
+          else putOpexSeniorOrSub(ws, pc(n) + r, n, 'opexSenior', FMT_M);
         }
         putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else if (flatMode) {
         for (var n = 0; n < N; n++) {
           if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, pc(n) + totalRowAddr + '-' + pc(n) + (totalRowAddr - 1), FMT_M);
-          else put(ws, pc(n) + r, periods[n].opexSenior || 0, FMT_M);
+          else putOpexSeniorOrSub(ws, pc(n) + r, n, 'opexSenior', FMT_M);
         }
         putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else {
-        fillPeriods(ws, r, function (n) { return periods[n].opexSenior || 0; }, FMT_M);
+        for (var n = 0; n < N; n++) putOpexSeniorOrSub(ws, pc(n) + r, n, 'opexSenior', FMT_M);
+        putF(ws, 'D' + r, sumFormula(r), FMT_M);
       }
       r++;
       var subRow = r;
@@ -718,33 +771,28 @@
         var subIdx = inp.opexItems.map(function (it, i) { return it.senior === false ? i : -1; }).filter(function (i) { return i >= 0; });
         for (var n = 0; n < N; n++) {
           if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, subIdx.map(function (i) { return '-' + pc(n) + itemRows[i]; }).join('+'), FMT_M);
-          else put(ws, pc(n) + r, periods[n].opexSub || 0, FMT_M);
+          else putOpexSeniorOrSub(ws, pc(n) + r, n, 'opexSub', FMT_M);
         }
         putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else if (flatMode) {
         for (var n = 0; n < N; n++) {
           if (opexPeriodIsFormulaable(n)) {
             putF(ws, pc(n) + r, pc(n) + totalRowAddr + '*' + IN + IN_ADDR.opexSubShare + '/100', FMT_M);
-          } else put(ws, pc(n) + r, periods[n].opexSub || 0, FMT_M);
+          } else putOpexSeniorOrSub(ws, pc(n) + r, n, 'opexSub', FMT_M);
         }
         putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else {
-        fillPeriods(ws, r, function (n) { return periods[n].opexSub || 0; }, FMT_M);
+        for (var n = 0; n < N; n++) putOpexSeniorOrSub(ws, pc(n) + r, n, 'opexSub', FMT_M);
+        putF(ws, 'D' + r, sumFormula(r), FMT_M);
       }
       r++;
+      // 선순위/후순위 행이 이제 항상 수식이나 "입력값" 참조로 채워져
+      // 있으므로(진짜 0인 비운영분기만 예외), 합계는 그냥 그 둘을 더하면
+      // 된다 — 여기서 다시 계산할 필요가 없다.
       OPEX_TOTAL_ROW = r;
       label(ws, r, '영업비용 합계', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) {
-        var p = periods[n];
-        if (opexRows && opexPeriodIsFormulaable(n)) {
-          putF(ws, pc(n) + r, pc(n) + seniorRow + '+' + pc(n) + subRow, FMT_M, { bold: true });
-        } else if (flatMode && opexPeriodIsFormulaable(n)) {
-          putF(ws, pc(n) + r,
-            IN + IN_ADDR.opexEok + '*100*(1+' + IN + IN_ADDR.opexEscal + '/100)^' + p.opYearIdx + '*(' + p.opMonths + '/12)',
-            FMT_M, { bold: true });
-        } else {
-          put(ws, pc(n) + r, rows[n].opex, FMT_M, { bold: true });
-        }
+        putF(ws, pc(n) + r, pc(n) + seniorRow + '+' + pc(n) + subRow, FMT_M, { bold: true });
       }
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
 
