@@ -91,6 +91,15 @@
       var p = periods[n];
       return !ovrByEnd[p.endStr] && p.isOp && ((p.opexSenior || 0) + (p.opexSub || 0)) !== 0;
     }
+    // 오버라이드 분기의 항목별 금액 = 그 분기 실제 합계(입력값 시트 참조)를
+    // 공식 기준 항목별 비중(raw)으로 비례배분한 수식 — itemizedOpex()가
+    // JS로 하던 계산을 그대로 Excel 수식으로 옮긴 것. 항목 합은 실제
+    // 합계와 정확히 일치하고, 항목 간 배분만 공식 비중 기준 근사치다.
+    function opexItemOverrideFormula(idx, n) {
+      var rawSum = inp.opexItems.map(function (it, j) { return '(' + opexItemFormulaStr(j, n) + ')'; }).join('+');
+      var actual = IN + pc(n) + IN_ADDR.ovr.opexSenior + '+' + IN + pc(n) + IN_ADDR.ovr.opexSub;
+      return 'IF(' + rawSum + '=0,0,(' + actual + ')*(' + opexItemFormulaStr(idx, n) + ')/(' + rawSum + '))';
+    }
     // opex 실제값 유무와 무관하게, 오버라이드가 없는 운영 분기인지만 본다
     // (감가상각비·복구충당부채 전입액처럼 opex와 별개로 항상 발생하는
     // 항목에 쓴다).
@@ -310,6 +319,30 @@
         r++;
       });
       r += 1;
+
+      // 방식3(64회차 직접 키인, "예시 불러오기" 전용) 트랜치의 상환비율도
+      // 결국 원본에서 그대로 가져온 key-in 데이터다 — Debt 시트에 직접
+      // 박아넣지 않고 여기 표로 두고 참조하게 한다. 표 자체(비율 배열)를
+      // "계산"할 수는 없지만(그 자체가 원본 값), Debt는 이제 이 표를
+      // 참조하는 수식만 갖는다.
+      var scheduleTranches = model.tranches.map(function (t, ti) { return t.method === 3 && t.schedule ? ti : -1; }).filter(function (ti) { return ti >= 0; });
+      if (scheduleTranches.length) {
+        for (var c = C0; c <= C0 + N - 1; c++) ws.getColumn(c).width = 11;
+        section(ws, r, '방식3 상환비율 ("예시 불러오기" 전용 — 원본 상환 스케줄)'); r += 2;
+        periodHeader(ws, r); r += 2;
+        IN_ADDR.schedule = {};
+        scheduleTranches.forEach(function (ti) {
+          var t = model.tranches[ti];
+          label(ws, r, t.name + ' 상환비율', '[비율]');
+          for (var k = 0; k < t.schedule.length; k++) {
+            var n = t.repayStartIdx + k;
+            if (n >= 0 && n < N) put(ws, pc(n) + r, t.schedule[k], '0.000000', { fill: INPUT_FILL });
+          }
+          IN_ADDR.schedule[ti] = r;
+          r++;
+        });
+        r += 1;
+      }
 
       if (model.capexItems && model.capexItems.length) {
         section(ws, r, '총사업비 항목'); r += 2;
@@ -545,6 +578,7 @@
           ints.push(interest); prins.push(prin); closes.push(bal);
         }
         var canFormula = (t.method === 1 || t.method === 2) && t.nRepay > 0;
+        var canScheduleLink = t.method === 3 && t.schedule && IN_ADDR.schedule && IN_ADDR.schedule[ti] != null;
         label(ws, r, t.name, null, { bold: true, fill: SUB_FILL }); r++;
         var openRow = r, drawRow = r + 1, idcRow = r + 2, intRow = r + 3, prinRow = r + 4, closeRow = r + 5;
         trBlocks.push({ openRow: openRow, intRow: intRow, prinRow: prinRow, closeRow: closeRow });
@@ -576,6 +610,8 @@
                 'PMT(' + IN + ia.rateO + '/4,' + t.nRepay + ',-' + IN + ia.amount + '*100)-' +
                 pc(n) + openRow + '*' + IN + ia.rateO + '/4', FMT_M);
             }
+          } else if (canScheduleLink && n >= t.repayStartIdx && n < t.repayStartIdx + t.schedule.length) {
+            putF(ws, pc(n) + prinRow, IN + pc(n) + IN_ADDR.schedule[ti] + '*' + IN + ia.amount + '*100', FMT_M);
           } else {
             put(ws, pc(n) + prinRow, prins[n], FMT_M);
           }
@@ -592,8 +628,11 @@
         label(ws, r, '미상환 잔액(검증용)', '[KRWm]');
         putF(ws, 'D' + r, lastC + closeRow, FMT_M);
         put(ws, 'F' + r, Math.abs(finalBal) < 1 ? '완전상환 확인 (OK)' : '경고: 미상환 잔액');
-        if (!canFormula) {
-          put(ws, 'H' + r, '※ 방식 3(직접 키인) 또는 미사용 트랜치 — 값(baked) 기준', null);
+        if (canScheduleLink) {
+          put(ws, 'H' + r, '※ 방식 3(직접 키인) — 원금상환은 "입력값" 시트의 상환비율 표를 참조하는 수식', null);
+          ws.getCell('H' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+        } else if (!canFormula) {
+          put(ws, 'H' + r, '※ 미사용 트랜치 — 값(baked) 기준', null);
           ws.getCell('H' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
         }
         r += 2;
@@ -726,8 +765,13 @@
           label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
           itemRows.push(r);
           for (var n = 0; n < N; n++) {
-            if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, '-(' + opexItemFormulaStr(idx, n) + ')', FMT_M);
-            else { var b = itemizedOpex(n); put(ws, pc(n) + r, b ? -b[idx] : 0, FMT_M); }
+            if (opexPeriodIsFormulaable(n)) {
+              putF(ws, pc(n) + r, '-(' + opexItemFormulaStr(idx, n) + ')', FMT_M);
+            } else if (ovrByEnd[periods[n].endStr]) {
+              putF(ws, pc(n) + r, '-(' + opexItemOverrideFormula(idx, n) + ')', FMT_M);
+            } else {
+              put(ws, pc(n) + r, 0, FMT_M);
+            }
           }
           putF(ws, 'D' + r, sumFormula(r), FMT_M);
           r++;
@@ -802,7 +846,7 @@
         ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       } else if (opexRows) {
         r++;
-        ws.getCell('B' + r).value = '※ 실측 오버라이드가 적용된 분기(있다면)는 항목별 실제값이 아니라 공식 기준 비중을 실제 합계에 비례 배분한 근사치(baked)이고, 그 외 분기는 "입력값" 시트를 참조하는 수식입니다.';
+        ws.getCell('B' + r).value = '※ 항목별 실제값이 없는 분기(오버라이드 포함)는 실제 합계("입력값" 시트 참조)를 공식 기준 비중으로 비례 배분한 수식입니다 — 합계 자체는 항상 실제값과 정확히 일치하고, 항목 간 배분만 근사치입니다.';
         ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       } else if (flatMode) {
         r++;
@@ -921,7 +965,7 @@
 
       if (opexRows) {
         r++;
-        ws.getCell('B' + r).value = '※ 영업비용 세부내역은 실측 오버라이드가 적용된 분기의 경우 항목별 실제값이 아니라, 공식(항목별 물가상승률) 기준 비중을 실제 합계에 비례 배분한 근사치입니다 — 합계 자체는 검증된 실제값과 정확히 일치합니다.';
+        ws.getCell('B' + r).value = '※ 영업비용 세부내역은 Opex 시트를 그대로 참조합니다 — 항목별 실제값이 없는 분기(오버라이드 포함)는 실제 합계를 공식 기준 비중으로 비례 배분한 수식이고, 합계 자체는 검증된 실제값과 정확히 일치합니다.';
         ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       } else if (opexLabelsOnly) {
         r++;
