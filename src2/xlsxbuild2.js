@@ -620,11 +620,16 @@
           continue;
         }
         if (ovr) {
-          // 오버라이드 분기(실측치) — 매출은 값(baked), 단가는 그 매출/
-          // 발전량의 역산 수식(발전량 0이면 0).
+          // 오버라이드 분기(실측치) — "매출 숫자를 통째로 박아넣지 말고
+          // 발전량×단가로 계산되게 해달라"는 요청 반영. 실측 사실 자체는
+          // "그 분기의 실제 정산단가"이고(발전량 0이면 정의 불가라 0으로
+          // 폴백), 매출은 다른 분기와 완전히 동일하게 발전량×단가/1000
+          // 수식으로 계산한다 — 값은 원본과 그대로 일치(단가 자체가
+          // 실측 매출/발전량이므로), 셀 구조만 나머지 분기와 통일된다.
           anyOverride = true;
-          putF(ws, pc(n) + 10, 'IF(' + pc(n) + '9=0,0,' + pc(n) + '12*1000/' + pc(n) + '9)', '#,##0.0');
-          put(ws, pc(n) + 12, rows[n].revenue, FMT_M, { bold: true });
+          var impliedPrice = rows[n].revenue && periods[n].gen > 0 ? rows[n].revenue / periods[n].gen * 1000 : 0;
+          put(ws, pc(n) + 10, impliedPrice, '#,##0.0');
+          putF(ws, pc(n) + 12, pc(n) + '9*' + pc(n) + '10/1000', FMT_M, { bold: true });
         } else if (hasTracks) {
           // 트랙별(SMP+REC/PPA 등) 입력 — 매출 = 발전량×Σ(트랙비중×트랙단가)/1000,
           // 트랙단가는 각각 에스컬레이션 적용. 단가행은 그 매출의 역산치.
@@ -643,7 +648,7 @@
 
       if (anyOverride) {
         var note = 14;
-        ws.getCell('B' + note).value = '※ 실측 오버라이드가 적용된 분기는 매출이 실측 사실(baked)이고, 판매단가는 그 매출/발전량의 역산 수식입니다.';
+        ws.getCell('B' + note).value = '※ 실측 오버라이드가 적용된 분기는 "판매단가"가 그 분기의 실제 정산단가(실측 사실, baked)이고, "영업수익"은 다른 분기와 동일하게 발전량×판매단가/1000 수식으로 계산됩니다(값은 원본과 그대로 일치).';
         ws.getCell('B' + note).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       }
     })();
