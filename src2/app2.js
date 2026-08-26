@@ -937,6 +937,19 @@
     var totalOpex = ref.opexItems.reduce(function (a, it) { return a + it.annualKRWm; }, 0);
     setVal('[data-k="opexEok"]', (totalOpex / 100).toFixed(2));
     setVal('[data-k="opexEscal"]', 1.2); // 표시용 근사(항목별 실제 값은 프리셋 계산에 그대로 반영됨)
+
+    // 운영비는 실제 항목별 실측치(reference.json opexItems)가 있으니
+    // 그대로 채워서 항목별 입력 모드를 켜준다 — 위 opexEok 합계 필드도
+    // 이 항목들의 합과 정확히 같은 값이라 서로 어긋나지 않는다.
+    OPEX_ITEMS = ref.opexItems.map(function (it) {
+      return { name: it.name, amountEok: it.annualKRWm / 100, escal: it.escalRate * 100, senior: it.senior !== false };
+    });
+    var opexToggleEl = $('#opexDetailToggle');
+    if (opexToggleEl) opexToggleEl.checked = true;
+    toggleOpexDetail(true);
+    // 총사업비는 원본에도 항목별 실측 내역(EPC/감리비 등 세부금액)이
+    // 없어서(총액만 존재) 항목별 모드로 켜지 않는다 — 켜면 빈 항목
+    // 합계(0)로 총사업비가 덮어써져서 오히려 틀린 값이 됨.
     setVal('[data-k="decomEok"]', ref.results.철거비 / 100);
     setVal('[data-k="depRatio"]', 95); setVal('[data-k="depYears"]', 20);
     setVal('[data-k="lossRate"]', 80); setVal('[data-k="taxFlat"]', 21);
