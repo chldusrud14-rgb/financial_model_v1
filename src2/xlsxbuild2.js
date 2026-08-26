@@ -320,14 +320,41 @@
     (function () {
       var ws = sheet('Opex');
       title(ws, '영업비용 추정');
-      section(ws, 4, '운영비용 (선순위/후순위 지급순위 반영)');
-      periodHeader(ws, 6);
-      label(ws, 9, '선순위운영비', '[KRWm]');
-      fillPeriods(ws, 9, function (n) { return periods[n].opexSenior || 0; }, FMT_M);
-      label(ws, 10, '후순위운영비', '[KRWm]');
-      fillPeriods(ws, 10, function (n) { return periods[n].opexSub || 0; }, FMT_M);
-      label(ws, 11, '영업비용 합계', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 11, function (n) { return rows[n].opex; }, FMT_M, { bold: true });
+      var r = 4;
+      section(ws, r, '운영비용 (선순위/후순위 지급순위 반영)'); r += 2;
+      periodHeader(ws, r); r += 2;
+
+      // IS(Q)와 같은 항목별 세부내역 — 화면에서 항목별로 입력했으면
+      // 실제 금액, 합계만 입력했으면 항목명만(금액 빈칸) 표시.
+      var opexRows = inp.opexItems && inp.opexItems.length;
+      var opexLabelsOnly = !opexRows && model.opexDisplayItems && model.opexDisplayItems.length;
+      if (opexRows) {
+        label(ws, r, '항목별 세부내역', null, { bold: true }); r++;
+        inp.opexItems.forEach(function (it, idx) {
+          label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
+          fillPeriods(ws, r, function (n) { var b = itemizedOpex(n); return b ? -b[idx] : 0; }, FMT_M); r++;
+        });
+        r++;
+      } else if (opexLabelsOnly) {
+        label(ws, r, '항목별 세부내역', null, { bold: true }); r++;
+        model.opexDisplayItems.forEach(function (it) {
+          label(ws, r, it.name, '[KRWm]', { indent: true }); r++;
+        });
+        r++;
+      }
+
+      label(ws, r, '선순위운영비', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return periods[n].opexSenior || 0; }, FMT_M); r++;
+      label(ws, r, '후순위운영비', '[KRWm]');
+      fillPeriods(ws, r, function (n) { return periods[n].opexSub || 0; }, FMT_M); r++;
+      label(ws, r, '영업비용 합계', '[KRWm]', { bold: true, fill: SUB_FILL });
+      fillPeriods(ws, r, function (n) { return rows[n].opex; }, FMT_M, { bold: true }); r++;
+
+      if (opexLabelsOnly) {
+        r++;
+        ws.getCell('B' + r).value = '※ 화면에서 운영비를 합계로만 입력해서 항목별 금액은 비어 있습니다 — 항목별로 입력하면 이 표에 실제 금액이 채워집니다.';
+        ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+      }
     })();
 
     /* =========================================================
