@@ -213,6 +213,13 @@
           if (it.amountEok != null) put(ws, 'C' + r, it.amountEok * 100, FMT_M);
           r++;
         });
+        // 항목별 금액을 안 넣었어도(전부 빈칸이어도) 합계는 항상 위
+        // "총사업비" 입력값 그대로 나온다 — 항목 합계가 아니라 실제
+        // 입력된 총사업비를 그대로 쓰므로 항목을 일부만 채워도 항상
+        // 정확하다.
+        put(ws, 'B' + r, '합계', '@', { bold: true, fill: SUB_FILL });
+        put(ws, 'C' + r, inp.capexEok * 100, FMT_M, { bold: true, fill: SUB_FILL });
+        r++;
       }
 
       var sh = model.kpi && model.kpi.shareholders;
