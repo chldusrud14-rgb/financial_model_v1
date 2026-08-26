@@ -18,6 +18,7 @@
   var FMT_X = '0.0000"x"';
   var BLACK = 'FF000000', WHITE = 'FFFFFFFF';
   var HDR_FILL = 'FF14483A', SUB_FILL = 'FFE8F1ED';
+  var INPUT_FILL = 'FFFFF200'; // 재무모델링 관례 — 사용자가 직접 key-in한 값은 노란색으로 표시
 
   function colLetter(n) {
     var s = '';
@@ -36,6 +37,10 @@
     var pc = function (n) { return colLetter(C0 + n); }; // 0-based 분기 인덱스 -> 열문자
     var firstC = pc(0), lastC = pc(N - 1);
     var IN = "'입력값'!"; // 다른 시트에서 입력값 시트 셀을 참조할 때 붙이는 접두사
+    // 분기별 실측 오버라이드(engine2.js와 동일한 판정) — 있는 분기는 공식이
+    // 아니라 실측 사실이라 수식화 대상에서 제외한다.
+    var ovrByEnd = {};
+    (inp.periodOverrides || []).forEach(function (o) { ovrByEnd[o.end] = o; });
 
     // 트랜치별 이자(운영) 시리즈 — Debt 시트와 IS(Q) 시트(이자비용 세부내역)가
     // 같은 계산을 각자 다시 하지 않도록 한 번만 구해서 공유한다.
@@ -70,6 +75,21 @@
       var rawSum = raws.reduce(function (a, b) { return a + b; }, 0);
       var scale = rawSum > 0 ? actual / rawSum : 0;
       return raws.map(function (v) { return v * scale; });
+    }
+    // 오버라이드가 없는 분기는 itemizedOpex()의 비례배분(scale=1)이 곧
+    // 순수 공식과 같으므로, 그 분기에 한해 "입력값" 시트를 참조하는
+    // 수식 문자열을 만들어 준다(양수 기준 — 부호는 호출부에서 처리).
+    function opexItemFormulaStr(idx, n) {
+      var it = inp.opexItems[idx], ia = IN_ADDR.opexItem[idx];
+      var p = periods[n];
+      var fracF = '(' + p.opMonths + '/12)';
+      var body = IN + ia.amount + '*100*' + fracF;
+      if (it.escal) body += '*(1+' + IN + ia.escal + '/100)^' + p.opYearIdx;
+      return body;
+    }
+    function opexPeriodIsFormulaable(n) {
+      var p = periods[n];
+      return !ovrByEnd[p.endStr] && p.isOp && ((p.opexSenior || 0) + (p.opexSub || 0)) !== 0;
     }
 
     function sheet(name, tab) {
@@ -192,7 +212,7 @@
         var addr = 'C' + r;
         ws.getCell('B' + r).value = name;
         ws.getCell('B' + r).font = { name: FONT, size: 10 };
-        put(ws, addr, val, fmt);
+        put(ws, addr, val, fmt, { fill: INPUT_FILL });
         r++;
         return addr;
       }
@@ -204,6 +224,8 @@
       IN_ADDR.tariffEscal = kv('판매단가 에스컬레이션[%/yr]', inp.tariffEscal, '0.00');
       IN_ADDR.degradation = kv('발전량 열화율[%/yr]', inp.degradation, '0.00');
       IN_ADDR.auxRate = kv('소내소비율[%]', inp.auxRate, '0.00');
+      if (inp.dailyHours != null) IN_ADDR.dailyHours = kv('일조시간[h/day]', inp.dailyHours, '0.000');
+      else IN_ADDR.capacityFactor = kv('이용률(CF)[%]', inp.capacityFactor, '0.00');
       r += 1;
 
       section(ws, r, '트랜치 조건'); r += 2;
@@ -215,14 +237,14 @@
       });
       r++;
       model.tranches.forEach(function (t, ti) {
-        put(ws, 'B' + r, t.name, '@');
+        put(ws, 'B' + r, t.name, '@', { fill: INPUT_FILL });
         var a = { amount: 'C' + r, rateC: 'D' + r, rateO: 'E' + r, grace: 'F' + r, repay: 'G' + r, method: 'H' + r };
-        put(ws, a.amount, t.amount / 100, FMT_M);
-        put(ws, a.rateC, t.rateO, FMT_P);
-        put(ws, a.rateO, t.rateO, FMT_P);
-        put(ws, a.grace, t.graceYears, '0.00');
-        put(ws, a.repay, t.repayYears, '0.00');
-        put(ws, a.method, t.method, '0');
+        put(ws, a.amount, t.amount / 100, FMT_M, { fill: INPUT_FILL });
+        put(ws, a.rateC, t.rateO, FMT_P, { fill: INPUT_FILL });
+        put(ws, a.rateO, t.rateO, FMT_P, { fill: INPUT_FILL });
+        put(ws, a.grace, t.graceYears, '0.00', { fill: INPUT_FILL });
+        put(ws, a.repay, t.repayYears, '0.00', { fill: INPUT_FILL });
+        put(ws, a.method, t.method, '0', { fill: INPUT_FILL });
         IN_ADDR.tranche.push(a);
         r++;
       });
@@ -238,8 +260,8 @@
         });
         r++;
         model.capexItems.forEach(function (it) {
-          put(ws, 'B' + r, it.name, '@');
-          if (it.amountEok != null) put(ws, 'C' + r, it.amountEok, FMT_M);
+          put(ws, 'B' + r, it.name, '@', { fill: INPUT_FILL });
+          put(ws, 'C' + r, it.amountEok != null ? it.amountEok : null, FMT_M, { fill: INPUT_FILL });
           IN_ADDR.capexItem.push({ name: 'B' + r, amount: 'C' + r, hasAmount: it.amountEok != null });
           r++;
         });
@@ -256,9 +278,9 @@
         });
         r++;
         inp.opexItems.forEach(function (it) {
-          put(ws, 'B' + r, it.name, '@');
-          put(ws, 'C' + r, it.annualKRWm / 100, FMT_M);
-          put(ws, 'D' + r, it.escal || 0, '0.00');
+          put(ws, 'B' + r, it.name, '@', { fill: INPUT_FILL });
+          put(ws, 'C' + r, it.annualKRWm / 100, FMT_M, { fill: INPUT_FILL });
+          put(ws, 'D' + r, it.escal || 0, '0.00', { fill: INPUT_FILL });
           IN_ADDR.opexItem.push({ name: 'B' + r, amount: 'C' + r, escal: 'D' + r });
           r++;
         });
@@ -276,15 +298,15 @@
         });
         r++;
         sh0.forEach(function (s) {
-          put(ws, 'B' + r, s.name, '@');
-          put(ws, 'C' + r, s.stakePct, '0.00');
+          put(ws, 'B' + r, s.name, '@', { fill: INPUT_FILL });
+          put(ws, 'C' + r, s.stakePct, '0.00', { fill: INPUT_FILL });
           IN_ADDR.sh.push({ name: 'B' + r, stake: 'C' + r });
           r++;
         });
       }
 
       r += 1;
-      ws.getCell('B' + r).value = '※ 세금·최저한세·배당가능이익 캡 등 IS(Q)/CF(Q)의 계산 결과는 반복계산·조건부 누적 로직이 얽혀 있어 여기 대상이 아니며 값(baked) 기준입니다. "예시 불러오기"로 채운 실측 오버라이드 분기도 공식이 아니라 실측 사실이라 수식화 대상이 아닙니다.';
+      ws.getCell('B' + r).value = '※ 노란색 셀 = 화면에서 직접 key-in한 입력값(재무모델링 관례). 세금·최저한세·배당가능이익 캡 등 IS(Q)/CF(Q)의 계산 결과는 반복계산·조건부 누적 로직이 얽혀 있어 여기 대상이 아니며 값(baked) 기준입니다. "예시 불러오기"로 채운 실측 오버라이드 분기도 공식이 아니라 실측 사실이라 수식화 대상이 아닙니다.';
       ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
     })();
 
@@ -392,7 +414,15 @@
       section(ws, r, '트랜치별 인출/상환 + 전체 합계'); r += 2;
       periodHeader(ws, r); r += 2;
 
+      // 방식 1(원금균등)/2(원리금균등)은 화면에서 사용자가 직접 고를 수 있는
+      // 방식이라 순수 재무공식(PMT 등)으로 완전히 재현 가능 — 이자/원금/잔액을
+      // "입력값" 시트를 참조하는 수식으로 연결한다. 방식 3(64회차 직접 키인,
+      // "예시 불러오기" 프리셋 전용, 화면에는 없음)은 스케줄 자체가 원본 실측
+      // 데이터라 수식화 대상이 아니라 그대로 값(baked)을 쓴다. 인출/IDC는
+      // 지출곡선·건설기간 배분 로직이 얽혀 있어 이번 단계에서는 baked 유지.
+      var trBlocks = [];
       model.tranches.forEach(function (t, ti) {
+        var ia = IN_ADDR.tranche[ti];
         var bal = 0;
         var opens = [], closes = [], ints = [], prins = [];
         for (var n = 0; n < N; n++) {
@@ -405,56 +435,159 @@
           bal -= prin;
           ints.push(interest); prins.push(prin); closes.push(bal);
         }
+        var canFormula = (t.method === 1 || t.method === 2) && t.nRepay > 0;
         label(ws, r, t.name, null, { bold: true, fill: SUB_FILL }); r++;
-        label(ws, r, '기초잔액', '[KRWm]');
-        fillPeriods(ws, r, function (n) { return opens[n]; }, FMT_M, { noSum: true }); r++;
-        label(ws, r, '인출', '[KRWm]');
-        fillPeriods(ws, r, function (n) { return t.draws[n] || 0; }, FMT_M); r++;
-        label(ws, r, '건설이자(IDC)', '[KRWm]');
-        fillPeriods(ws, r, function (n) { return t.idcSeries[n] || 0; }, FMT_M); r++;
-        label(ws, r, '이자(운영)', '[KRWm]');
-        fillPeriods(ws, r, function (n) { return ints[n]; }, FMT_M); r++;
-        label(ws, r, '원금상환', '[KRWm]');
-        fillPeriods(ws, r, function (n) { return prins[n]; }, FMT_M); r++;
-        label(ws, r, '기말잔액', '[KRWm]', { bold: true });
-        fillPeriods(ws, r, function (n) { return closes[n]; }, FMT_M, { bold: true, noSum: true }); r++;
+        var openRow = r, drawRow = r + 1, idcRow = r + 2, intRow = r + 3, prinRow = r + 4, closeRow = r + 5;
+        trBlocks.push({ openRow: openRow, intRow: intRow, prinRow: prinRow, closeRow: closeRow });
+
+        label(ws, openRow, '기초잔액', '[KRWm]');
+        for (var n = 0; n < N; n++) {
+          if (n === 0) put(ws, pc(0) + openRow, 0, FMT_M, { noSum: true });
+          else putF(ws, pc(n) + openRow, pc(n - 1) + closeRow, FMT_M, { noSum: true });
+        }
+        label(ws, drawRow, '인출', '[KRWm]');
+        fillPeriods(ws, drawRow, function (n) { return t.draws[n] || 0; }, FMT_M);
+        label(ws, idcRow, '건설이자(IDC)', '[KRWm]');
+        fillPeriods(ws, idcRow, function (n) { return t.idcSeries[n] || 0; }, FMT_M);
+
+        label(ws, intRow, '이자(운영)', '[KRWm]');
+        for (var n = 0; n < N; n++) {
+          if (periods[n].isOp) putF(ws, pc(n) + intRow, pc(n) + openRow + '*' + IN + ia.rateO + '/4', FMT_M);
+          else put(ws, pc(n) + intRow, 0, FMT_M);
+        }
+        var sumInt = ints.reduce(function (a, b) { return a + b; }, 0);
+        put(ws, 'D' + intRow, sumInt, FMT_M, { bold: true });
+
+        label(ws, prinRow, '원금상환', '[KRWm]');
+        for (var n = 0; n < N; n++) {
+          if (canFormula && n >= t.repayStartIdx && n <= t.repayEndIdx) {
+            if (t.method === 1) {
+              putF(ws, pc(n) + prinRow, IN + ia.amount + '*100/' + t.nRepay, FMT_M);
+            } else {
+              putF(ws, pc(n) + prinRow,
+                'PMT(' + IN + ia.rateO + '/4,' + t.nRepay + ',-' + IN + ia.amount + '*100)-' +
+                pc(n) + openRow + '*' + IN + ia.rateO + '/4', FMT_M);
+            }
+          } else {
+            put(ws, pc(n) + prinRow, prins[n], FMT_M);
+          }
+        }
+        var sumPrin = prins.reduce(function (a, b) { return a + b; }, 0);
+        put(ws, 'D' + prinRow, sumPrin, FMT_M, { bold: true });
+
+        label(ws, closeRow, '기말잔액', '[KRWm]', { bold: true });
+        for (var n = 0; n < N; n++) {
+          putF(ws, pc(n) + closeRow,
+            pc(n) + openRow + '+' + pc(n) + drawRow + '-' + pc(n) + prinRow, FMT_M, { bold: true });
+        }
+        r = closeRow + 1;
         var finalBal = closes[N - 1];
         label(ws, r, '미상환 잔액(검증용)', '[KRWm]');
         put(ws, 'D' + r, finalBal, FMT_M);
         put(ws, 'F' + r, Math.abs(finalBal) < 1 ? '완전상환 확인 (OK)' : '경고: 미상환 잔액');
+        if (!canFormula) {
+          put(ws, 'H' + r, '※ 방식 3(직접 키인) 또는 미사용 트랜치 — 값(baked) 기준', null);
+          ws.getCell('H' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+        }
         r += 2;
       });
 
       section(ws, r, '전체 합계'); r++;
       label(ws, r, '기초잔액', '[KRWm]');
       fillPeriods(ws, r, function (n) { return rows[n].debtOpen; }, FMT_M, { noSum: true }); r++;
+      var intTotalRow = r;
       label(ws, r, '이자', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return rows[n].interest; }, FMT_M); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.intRow; }).join('+'), FMT_M);
+      }
+      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.interest; }, 0), FMT_M, { bold: true });
+      r++;
+      var prinTotalRow = r;
       label(ws, r, '원금상환', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return rows[n].principal; }, FMT_M); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.prinRow; }).join('+'), FMT_M);
+      }
+      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.principal; }, 0), FMT_M, { bold: true });
+      r++;
       label(ws, r, '원리금(DS)', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, r, function (n) { return rows[n].ds; }, FMT_M, { bold: true }); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, pc(n) + intTotalRow + '+' + pc(n) + prinTotalRow, FMT_M, { bold: true });
+      }
+      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.ds; }, 0), FMT_M, { bold: true });
+      r++;
       label(ws, r, '기말잔액', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return rows[n].debtClose; }, FMT_M, { noSum: true }); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.closeRow; }).join('+'), FMT_M, { noSum: true });
+      }
+      r++;
       r++;
       label(ws, r, 'DSRA 기말잔액', '[KRWm]');
       fillPeriods(ws, r, function (n) { return rows[n].dsraClose; }, FMT_M, { noSum: true });
     })();
 
     /* =========================================================
-       3. Revenue
+       3. Revenue — 발전량은 항상 수식화(오버라이드도 발전량 자체엔 영향
+          없음). 판매단가/영업수익은 트랙별 입력(tariffTracks)이 없고
+          해당 분기가 실측 오버라이드 대상이 아닐 때만 수식으로 연결
+          (오버라이드 분기는 그 자체가 실측 사실이라 baked 유지).
        ========================================================= */
     (function () {
       var ws = sheet('Revenue');
       title(ws, '영업수익 추정');
       section(ws, 4, '발전량 및 매출');
       periodHeader(ws, 6);
+      var ppy = inp.ppy || 4;
       label(ws, 9, '발전량', '[MWh]');
-      fillPeriods(ws, 9, function (n) { return periods[n].gen; }, '#,##0');
+      for (var n = 0; n < N; n++) {
+        var p = periods[n];
+        var degF = 'MAX(0,1-' + IN + IN_ADDR.degradation + '/100*' + p.opYearIdx + ')';
+        var annualGenF = inp.dailyHours != null
+          ? IN + IN_ADDR.capacityMW + '*' + IN + IN_ADDR.dailyHours + '*365'
+          : IN + IN_ADDR.capacityMW + '*8760*(' + IN + IN_ADDR.capacityFactor + '/100)';
+        var frac = p.opMonths / 12;
+        var full = ppy === 4 && p.opMonths === (12 / ppy);
+        var genFrac = (inp.seasonality && full) ? inp.seasonality[p.end.getUTCMonth() + 1] : frac;
+        putF(ws, pc(n) + 9, '(' + annualGenF + ')*' + degF + '*(1-' + IN + IN_ADDR.auxRate + '/100)*' + genFrac, '#,##0');
+      }
+      var sumGen = periods.reduce(function (a, pp) { return a + pp.gen; }, 0);
+      put(ws, 'D9', sumGen, '#,##0', { bold: true });
+
       label(ws, 10, '판매단가', '[원/kWh]');
-      fillPeriods(ws, 10, function (n) { return periods[n].isOp ? periods[n].price : null; }, '#,##0.0', { noSum: true });
       label(ws, 12, '영업수익', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 12, function (n) { return rows[n].revenue; }, FMT_M, { bold: true });
+      var canPriceFormula = !(inp.tariffTracks && inp.tariffTracks.length);
+      var anyOverride = false;
+      for (var n = 0; n < N; n++) {
+        var p = periods[n];
+        var ovr = !!(ovrByEnd[p.endStr]);
+        if (!p.isOp) {
+          put(ws, pc(n) + 10, null, '#,##0.0');
+          put(ws, pc(n) + 12, 0, FMT_M, { bold: true });
+          continue;
+        }
+        if (ovr) { anyOverride = true; }
+        if (canPriceFormula && !ovr) {
+          putF(ws, pc(n) + 10,
+            IN + IN_ADDR.tariff + '*(1+' + IN + IN_ADDR.tariffEscal + '/100)^' + p.opYearIdx, '#,##0.0');
+          putF(ws, pc(n) + 12, pc(n) + '9*' + pc(n) + '10/1000', FMT_M, { bold: true });
+        } else {
+          // 오버라이드 분기(실측치) 또는 트랙별(tariffTracks) 입력 — 단가는
+          // 실제 매출/발전량의 역산치(발전량 0이면 0), 매출은 실측/트랙합산
+          // 값(baked).
+          putF(ws, pc(n) + 10, 'IF(' + pc(n) + '9=0,0,' + pc(n) + '12*1000/' + pc(n) + '9)', '#,##0.0');
+          put(ws, pc(n) + 12, rows[n].revenue, FMT_M, { bold: true });
+        }
+      }
+      put(ws, 'D12', rows.reduce(function (a, ro) { return a + ro.revenue; }, 0), FMT_M, { bold: true });
+
+      if (!canPriceFormula || anyOverride) {
+        var note = 14;
+        ws.getCell('B' + note).value = (!canPriceFormula
+          ? '※ 판매단가가 트랙별 입력(SMP+REC/PPA 등 tariffTracks)이라 이번 단계에서는 수식화 대상이 아닙니다 — 매출은 값(baked) 기준. '
+          : '') + (anyOverride
+          ? '※ 실측 오버라이드가 적용된 분기는 매출이 실측 사실(baked)이고, 판매단가는 그 매출/발전량의 역산 수식입니다.'
+          : '');
+        ws.getCell('B' + note).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+      }
     })();
 
     /* =========================================================
@@ -471,11 +604,20 @@
       // 실제 금액, 합계만 입력했으면 항목명만(금액 빈칸) 표시.
       var opexRows = inp.opexItems && inp.opexItems.length;
       var opexLabelsOnly = !opexRows && model.opexDisplayItems && model.opexDisplayItems.length;
+      var itemRows = [];
       if (opexRows) {
         label(ws, r, '항목별 세부내역', null, { bold: true }); r++;
         inp.opexItems.forEach(function (it, idx) {
           label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
-          fillPeriods(ws, r, function (n) { var b = itemizedOpex(n); return b ? -b[idx] : 0; }, FMT_M); r++;
+          itemRows.push(r);
+          for (var n = 0; n < N; n++) {
+            if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, '-(' + opexItemFormulaStr(idx, n) + ')', FMT_M);
+            else { var b = itemizedOpex(n); put(ws, pc(n) + r, b ? -b[idx] : 0, FMT_M); }
+          }
+          var sumV = 0;
+          for (var n = 0; n < N; n++) { var b = itemizedOpex(n); sumV += b ? -b[idx] : 0; }
+          put(ws, 'D' + r, sumV, FMT_M);
+          r++;
         });
         r++;
       } else if (opexLabelsOnly) {
@@ -486,16 +628,46 @@
         r++;
       }
 
+      var seniorRow = r;
       label(ws, r, '선순위운영비', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return periods[n].opexSenior || 0; }, FMT_M); r++;
+      if (opexRows && inp.opexItems.some(function (it) { return it.senior !== false; })) {
+        var seniorIdx = inp.opexItems.map(function (it, i) { return it.senior !== false ? i : -1; }).filter(function (i) { return i >= 0; });
+        for (var n = 0; n < N; n++) {
+          if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, seniorIdx.map(function (i) { return '-' + pc(n) + itemRows[i]; }).join('+'), FMT_M);
+          else put(ws, pc(n) + r, periods[n].opexSenior || 0, FMT_M);
+        }
+        put(ws, 'D' + r, periods.reduce(function (a, p) { return a + (p.opexSenior || 0); }, 0), FMT_M);
+      } else {
+        fillPeriods(ws, r, function (n) { return periods[n].opexSenior || 0; }, FMT_M);
+      }
+      r++;
+      var subRow = r;
       label(ws, r, '후순위운영비', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return periods[n].opexSub || 0; }, FMT_M); r++;
+      if (opexRows && inp.opexItems.some(function (it) { return it.senior === false; })) {
+        var subIdx = inp.opexItems.map(function (it, i) { return it.senior === false ? i : -1; }).filter(function (i) { return i >= 0; });
+        for (var n = 0; n < N; n++) {
+          if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, subIdx.map(function (i) { return '-' + pc(n) + itemRows[i]; }).join('+'), FMT_M);
+          else put(ws, pc(n) + r, periods[n].opexSub || 0, FMT_M);
+        }
+        put(ws, 'D' + r, periods.reduce(function (a, p) { return a + (p.opexSub || 0); }, 0), FMT_M);
+      } else {
+        fillPeriods(ws, r, function (n) { return periods[n].opexSub || 0; }, FMT_M);
+      }
+      r++;
       label(ws, r, '영업비용 합계', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, r, function (n) { return rows[n].opex; }, FMT_M, { bold: true }); r++;
+      for (var n = 0; n < N; n++) {
+        if (opexRows && opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, pc(n) + seniorRow + '+' + pc(n) + subRow, FMT_M, { bold: true });
+        else put(ws, pc(n) + r, rows[n].opex, FMT_M, { bold: true });
+      }
+      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.opex; }, 0), FMT_M, { bold: true }); r++;
 
       if (opexLabelsOnly) {
         r++;
         ws.getCell('B' + r).value = '※ 화면에서 운영비를 합계로만 입력해서 항목별 금액은 비어 있습니다 — 항목별로 입력하면 이 표에 실제 금액이 채워집니다.';
+        ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+      } else if (opexRows) {
+        r++;
+        ws.getCell('B' + r).value = '※ 실측 오버라이드가 적용된 분기(있다면)는 항목별 실제값이 아니라 공식 기준 비중을 실제 합계에 비례 배분한 근사치(baked)이고, 그 외 분기는 "입력값" 시트를 참조하는 수식입니다.';
         ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       }
     })();
@@ -519,7 +691,14 @@
         label(ws, r, '영업비용 세부내역', null, { bold: true }); r++;
         inp.opexItems.forEach(function (it, idx) {
           label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
-          fillPeriods(ws, r, function (n) { var b = itemizedOpex(n); return b ? -b[idx] : 0; }, FMT_M); r++;
+          for (var n = 0; n < N; n++) {
+            if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, '-(' + opexItemFormulaStr(idx, n) + ')', FMT_M);
+            else { var b = itemizedOpex(n); put(ws, pc(n) + r, b ? -b[idx] : 0, FMT_M); }
+          }
+          var sumV = 0;
+          for (var n = 0; n < N; n++) { var b = itemizedOpex(n); sumV += b ? -b[idx] : 0; }
+          put(ws, 'D' + r, sumV, FMT_M);
+          r++;
         });
         label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
         fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M, { bold: true }); r++;
