@@ -730,9 +730,12 @@
   }
 
   function runSensitivity() {
+    var wasPreset = usingPreset;
     if (usingPreset) {
-      toast('민감도 분석은 "당진 FS 불러오기" 프리셋 상태에서는 의미가 없습니다(실측치로 고정됨) — 아무 값이나 수정해 프리셋을 해제한 뒤 사용하세요');
-      return;
+      // 실측치(periodOverrides) 기준으로는 판매단가/총사업비/운영비/금리를
+      // 바꿔도 결과가 그대로라 민감도 분석 자체가 의미 없다. 막는 대신
+      // 프리셋을 해제하고 일반 계산식 기준으로 자동 전환해서 실행한다.
+      usingPreset = false;
     }
     var baseInp = buildBaseInp();
 
@@ -749,7 +752,10 @@
     });
     lastSensResults = results;
     renderSensResults(results);
-    toast('민감도 분석 완료 — ' + results.length + '개 시나리오');
+    toast(
+      (wasPreset ? '프리셋을 해제하고 일반 계산식 기준으로 전환했습니다 — ' : '') +
+      '민감도 분석 완료 — ' + results.length + '개 시나리오'
+    );
   }
 
   function renderSensResults(results) {
