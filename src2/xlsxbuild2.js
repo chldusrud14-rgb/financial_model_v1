@@ -212,8 +212,14 @@
     // IS(Q)의 이자비용 세부내역이 재계산하지 않고 그대로 참조하는 데 쓴다.
     var DEBT_TR_BLOCKS = [];
     var FUNDING_TIC_ADDR = null; // Funding 시트의 TIC(총투자비) 셀 주소 — 감가상각비 수식이 참조
+    var FUNDING_IDC_ADDR = null, FUNDING_EQUITY_ADDR = null, FUNDING_DEBT_ADDR = null;
+    var DEBT_DS_ROW = null; // Debt 시트 "전체 합계 원리금(DS)" 행 — CF(Q)가 참조
+    // Opex 시트가 채운 항목별 행 번호와 "영업비용 합계" 행 번호 — IS(Q)가
+    // 재계산하지 않고 그대로 참조하는 데 쓴다.
+    var OPEX_ITEM_ROWS = [];
+    var OPEX_TOTAL_ROW = null;
     (function () {
-      var ws = wb.addWorksheet('입력값', { properties: { tabColor: { argb: 'FF6B7B76' } } });
+      var ws = wb.addWorksheet('입력값', { properties: { tabColor: { argb: INPUT_FILL } } });
       ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 22; ws.getColumn(3).width = 14;
       for (var c = 4; c <= 10; c++) ws.getColumn(c).width = 12;
       title(ws, '입력값 — 화면에서 입력한 값 (다른 시트가 이 시트를 참조)');
@@ -371,11 +377,14 @@
         c.alignment = { horizontal: 'center' };
       });
       r++;
-      put(ws, 'B' + r, '자본금'); putF(ws, 'C' + r, IN + IN_ADDR.equityEok + '*100', FMT_M); r++;
+      put(ws, 'B' + r, '자본금'); putF(ws, 'C' + r, IN + IN_ADDR.equityEok + '*100', FMT_M);
+      FUNDING_EQUITY_ADDR = 'C' + r; r++;
+      var trAmtRows = [];
       model.tranches.forEach(function (t, ti) {
         var ia = IN_ADDR.tranche[ti];
         put(ws, 'B' + r, t.name);
         putF(ws, 'C' + r, IN + ia.amount + '*100', FMT_M);
+        trAmtRows.push(r);
         put(ws, 'D' + r, t.order === undefined ? '' : t.order, '0');
         putF(ws, 'E' + r, IN + ia.rateC, FMT_P);
         putF(ws, 'F' + r, IN + ia.rateO, FMT_P);
@@ -385,9 +394,12 @@
         put(ws, 'J' + r, t.repayStartIdx >= 0 ? periods[t.repayStartIdx].endStr : '-', '@');
         r++;
       });
+      put(ws, 'B' + r, '차입금 합계', '@', { bold: true, fill: SUB_FILL });
+      putF(ws, 'C' + r, trAmtRows.map(function (rr) { return 'C' + rr; }).join('+'), FMT_M, { bold: true, fill: SUB_FILL });
+      FUNDING_DEBT_ADDR = 'C' + r; r++;
       r += 1;
       section(ws, r, '건설이자(IDC)'); r += 2;
-      put(ws, 'B' + r, 'IDC 합계[KRWm]'); put(ws, 'C' + r, model.idc, FMT_M); r++;
+      put(ws, 'B' + r, 'IDC 합계[KRWm]'); put(ws, 'C' + r, model.idc, FMT_M); FUNDING_IDC_ADDR = 'C' + r; r++;
       put(ws, 'B' + r, '총투자비(TIC)[KRWm]'); put(ws, 'C' + r, model.tic, FMT_M); FUNDING_TIC_ADDR = 'C' + r; r++;
       put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M); r++;
 
@@ -555,6 +567,7 @@
         putF(ws, pc(n) + r, pc(n) + intTotalRow + '+' + pc(n) + prinTotalRow, FMT_M, { bold: true });
       }
       put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.ds; }, 0), FMT_M, { bold: true });
+      DEBT_DS_ROW = r;
       r++;
       label(ws, r, '기말잔액', '[KRWm]');
       for (var n = 0; n < N; n++) {
@@ -648,7 +661,7 @@
       // 실제 금액, 합계만 입력했으면 항목명만(금액 빈칸) 표시.
       var opexRows = inp.opexItems && inp.opexItems.length;
       var opexLabelsOnly = !opexRows && model.opexDisplayItems && model.opexDisplayItems.length;
-      var itemRows = [];
+      var itemRows = OPEX_ITEM_ROWS;
       if (opexRows) {
         label(ws, r, '항목별 세부내역', null, { bold: true }); r++;
         inp.opexItems.forEach(function (it, idx) {
@@ -715,6 +728,7 @@
         fillPeriods(ws, r, function (n) { return periods[n].opexSub || 0; }, FMT_M);
       }
       r++;
+      OPEX_TOTAL_ROW = r;
       label(ws, r, '영업비용 합계', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) {
         var p = periods[n];
@@ -755,26 +769,28 @@
       section(ws, r, '손익계산서'); r += 2;
       periodHeader(ws, r); r += 2;
 
+      // 새로 계산하지 않고 Revenue 시트를 그대로 참조한다(Revenue 시트의
+      // 12행 "영업수익"이 이미 값/수식을 다 가지고 있음 — 로직 중복 방지).
       label(ws, r, '영업수익', '[KRWm]', { bold: true });
-      fillPeriods(ws, r, function (n) { return rows[n].revenue; }, FMT_M, { bold: true }); r += 2;
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "'Revenue'!" + pc(n) + '12', FMT_M, { bold: true });
+      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.revenue; }, 0), FMT_M, { bold: true });
+      r += 2;
 
+      // 새로 계산하지 않고 Opex 시트를 그대로 참조한다(항목별 로직이 이미
+      // Opex 시트에 있음 — 두 곳에서 같은 계산을 유지하는 위험을 없앤다).
       var opexRows = inp.opexItems && inp.opexItems.length;
       var opexLabelsOnly = !opexRows && model.opexDisplayItems && model.opexDisplayItems.length;
       if (opexRows) {
         label(ws, r, '영업비용 세부내역', null, { bold: true }); r++;
         inp.opexItems.forEach(function (it, idx) {
           label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
-          for (var n = 0; n < N; n++) {
-            if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, '-(' + opexItemFormulaStr(idx, n) + ')', FMT_M);
-            else { var b = itemizedOpex(n); put(ws, pc(n) + r, b ? -b[idx] : 0, FMT_M); }
-          }
+          var opexRowAddr = OPEX_ITEM_ROWS[idx];
+          for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "'Opex'!" + pc(n) + opexRowAddr, FMT_M);
           var sumV = 0;
           for (var n = 0; n < N; n++) { var b = itemizedOpex(n); sumV += b ? -b[idx] : 0; }
           put(ws, 'D' + r, sumV, FMT_M);
           r++;
         });
-        label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
-        fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M, { bold: true }); r++;
       } else if (opexLabelsOnly) {
         // 합계만 입력한 경우 — 항목 이름만 보여주고 금액칸은 비워둔다
         // (화면에서 항목별 금액을 안 넣었으니 추정치를 임의로 채우지 않음).
@@ -782,12 +798,10 @@
         model.opexDisplayItems.forEach(function (it) {
           label(ws, r, it.name, '[KRWm]', { indent: true }); r++;
         });
-        label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
-        fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M, { bold: true }); r++;
-      } else {
-        label(ws, r, '영업비용', '[KRWm]');
-        fillPeriods(ws, r, function (n) { return -rows[n].opex; }, FMT_M); r++;
       }
+      label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "-'Opex'!" + pc(n) + OPEX_TOTAL_ROW, FMT_M, { bold: true });
+      put(ws, 'D' + r, -rows.reduce(function (a, ro) { return a + ro.opex; }, 0), FMT_M, { bold: true }); r++;
       r++;
       label(ws, r, 'EBITDA', '[KRWm]', { bold: true, fill: SUB_FILL });
       fillPeriods(ws, r, function (n) { return rows[n].ebitda; }, FMT_M, { bold: true }); r++;
@@ -877,9 +891,15 @@
       label(ws, 9, 'CFADS (원리금상환재원)', '[KRWm]', { bold: true, fill: SUB_FILL });
       fillPeriods(ws, 9, function (n) { return rows[n].cfads; }, FMT_M, { bold: true });
       label(ws, 10, '원리금(DS)', '[KRWm]');
-      fillPeriods(ws, 10, function (n) { return rows[n].ds; }, FMT_M);
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + 10, "'Debt'!" + pc(n) + DEBT_DS_ROW, FMT_M);
+      put(ws, 'D10', rows.reduce(function (a, ro) { return a + ro.ds; }, 0), FMT_M);
       label(ws, 11, '단순 DSCR', '[x]', { bold: true });
-      fillPeriods(ws, 11, function (n) { return rows[n].dscr; }, FMT_X, { bold: true, noSum: true });
+      // CFADS(9행)÷원리금(10행) — 둘 다 이미 이 시트 안에 있으니 순수 비율
+      // 수식으로 연결(원리금이 0에 가까우면 원본과 동일하게 공란 처리).
+      for (var n = 0; n < N; n++) {
+        if (rows[n].ds > 1e-9) putF(ws, pc(n) + 11, pc(n) + '9/' + pc(n) + '10', FMT_X, { bold: true });
+        else put(ws, pc(n) + 11, null, FMT_X, { bold: true });
+      }
       label(ws, 13, 'FCFE', '[KRWm]', { bold: true });
       fillPeriods(ws, 13, function (n) { return rows[n].fcfe; }, FMT_M, { bold: true });
       label(ws, 14, 'DSRA 증감', '[KRWm]');
@@ -915,17 +935,23 @@
         put(ws, 'D' + r, val, fmt, { bold: true });
         r++;
       }
+      function kvF(name, formulaStr, fmt) {
+        ws.getCell('B' + r).value = name;
+        ws.getCell('B' + r).font = { name: FONT, size: 10 };
+        putF(ws, 'D' + r, formulaStr, fmt, { bold: true });
+        r++;
+      }
       section(ws, r, '사업 개요'); r += 2;
-      kv('사업명', inp.projectName, '@');
-      kv('설비용량 [MW]', inp.capacityMW, '#,##0.000');
+      kvF('사업명', IN + IN_ADDR.projectName, '@');
+      kvF('설비용량 [MW]', IN + IN_ADDR.capacityMW, '#,##0.000');
       kv('총 기간 수(분기)', N, '0');
       kv('건설 개시', inp.constructionStart, '@');
       r++;
       section(ws, r, '재원조달'); r += 2;
-      kv('총투자비(TIC) [KRWm]', model.tic, FMT_M);
-      kv('  건설이자(IDC) [KRWm]', model.idc, FMT_M);
-      kv('자기자본 [KRWm]', model.equity, FMT_M);
-      kv('차입금 합계 [KRWm]', model.debt, FMT_M);
+      kvF('총투자비(TIC) [KRWm]', "'Funding'!" + FUNDING_TIC_ADDR, FMT_M);
+      kvF('  건설이자(IDC) [KRWm]', "'Funding'!" + FUNDING_IDC_ADDR, FMT_M);
+      kvF('자기자본 [KRWm]', "'Funding'!" + FUNDING_EQUITY_ADDR, FMT_M);
+      kvF('차입금 합계 [KRWm]', "'Funding'!" + FUNDING_DEBT_ADDR, FMT_M);
       r++;
       section(ws, r, '수익성 지표'); r += 2;
       var k = model.kpi;
