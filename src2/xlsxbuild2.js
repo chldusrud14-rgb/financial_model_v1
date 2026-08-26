@@ -140,7 +140,7 @@
         c1.numFmt = '@';
         c1.font = { name: FONT, bold: true, size: 8, color: { argb: WHITE } };
         c1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
-        c1.alignment = { horizontal: 'center', textRotation: 90 };
+        c1.alignment = { horizontal: 'center', textRotation: 0 };
       }
     }
     function label(ws, r, text, unit, opt) {
