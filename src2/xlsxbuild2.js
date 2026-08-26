@@ -35,6 +35,7 @@
     var C0 = 5; // E열 = 첫 분기
     var pc = function (n) { return colLetter(C0 + n); }; // 0-based 분기 인덱스 -> 열문자
     var firstC = pc(0), lastC = pc(N - 1);
+    var IN = "'입력값'!"; // 다른 시트에서 입력값 시트 셀을 참조할 때 붙이는 접두사
 
     // 트랜치별 이자(운영) 시리즈 — Debt 시트와 IS(Q) 시트(이자비용 세부내역)가
     // 같은 계산을 각자 다시 하지 않도록 한 번만 구해서 공유한다.
@@ -142,6 +143,17 @@
       if (opt.fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opt.fill } };
       return c;
     }
+    // put()과 같지만 값 대신 다른 시트를 참조하는 수식을 넣는다(입력값
+    // 시트를 고치면 이 셀도 같이 바뀌는 라이브 연결 셀에 사용).
+    function putF(ws, addr, formulaStr, fmt, opt) {
+      opt = opt || {};
+      var c = ws.getCell(addr);
+      c.value = { formula: formulaStr };
+      c.numFmt = fmt || FMT_M;
+      c.font = { name: FONT, size: 10, bold: !!opt.bold, color: { argb: opt.color || BLACK } };
+      if (opt.fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opt.fill } };
+      return c;
+    }
     // opt.noSum: 잔액류(스톡)는 분기 합계가 의미 없으므로 D열 합계를 안 채운다.
     function fillPeriods(ws, r, fn, fmt, opt) {
       opt = opt || {};
@@ -154,6 +166,127 @@
       }
       if (!hasNull && !opt.noSum) put(ws, 'D' + r, sum, fmt, Object.assign({ bold: true }, opt));
     }
+
+    /* =========================================================
+       0. 입력값 — 화면(html)에서 key-in한 원본 입력을 한 시트에 모아둔다.
+          Funding 등 다른 시트의 "단순 복사" 성격 셀(트랜치 조건/총사업비
+          항목/사업자 지분 등)은 이 시트를 참조하는 수식으로 연결해서,
+          입력값을 이 시트에서 고치면 해당 셀이 같이 바뀌는 걸 볼 수
+          있게 한다. 다만 세금/최저한세/배당가능이익 캡처럼 반복계산·
+          연도 태그 SUMIF로 얽힌 IS(Q)/CF(Q)의 계산 결과는 여기 대상이
+          아니다 — 그대로 값(baked) 기준을 유지한다(이유는 파일 맨 위
+          주석 참조). 실측 오버라이드(periodOverrides, "예시 불러오기")가
+          적용된 분기는 애초에 공식이 아니라 실측 사실이라 수식화할 수
+          없다 — 그런 분기는 이 시트의 입력값이 아니라 실측치가 곧
+          정답이라는 뜻.
+       ========================================================= */
+    var IN_ADDR = { tranche: [], capexItem: [], opexItem: [], sh: [] };
+    (function () {
+      var ws = wb.addWorksheet('입력값', { properties: { tabColor: { argb: 'FF6B7B76' } } });
+      ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 22; ws.getColumn(3).width = 14;
+      for (var c = 4; c <= 10; c++) ws.getColumn(c).width = 12;
+      title(ws, '입력값 — 화면에서 입력한 값 (다른 시트가 이 시트를 참조)');
+      var r = 4;
+      section(ws, r, '사업 기본 가정'); r += 2;
+      function kv(name, val, fmt) {
+        var addr = 'C' + r;
+        ws.getCell('B' + r).value = name;
+        ws.getCell('B' + r).font = { name: FONT, size: 10 };
+        put(ws, addr, val, fmt);
+        r++;
+        return addr;
+      }
+      IN_ADDR.projectName = kv('사업명', inp.projectName, '@');
+      IN_ADDR.capacityMW = kv('설비용량[MW]', inp.capacityMW, '#,##0.000');
+      IN_ADDR.capexEok = kv('총사업비[억원]', inp.capexEok, FMT_M);
+      IN_ADDR.equityEok = kv('자기자본[억원]', inp.equityEok, FMT_M);
+      IN_ADDR.tariff = kv('판매단가[원/kWh]', inp.tariff, '#,##0.0');
+      IN_ADDR.tariffEscal = kv('판매단가 에스컬레이션[%/yr]', inp.tariffEscal, '0.00');
+      IN_ADDR.degradation = kv('발전량 열화율[%/yr]', inp.degradation, '0.00');
+      IN_ADDR.auxRate = kv('소내소비율[%]', inp.auxRate, '0.00');
+      r += 1;
+
+      section(ws, r, '트랜치 조건'); r += 2;
+      ['트랜치', '금액[억원]', '건설금리[%]', '운영금리[%]', '거치(yr)', '상환(yr)', '방식'].forEach(function (h, idx) {
+        var cc = ws.getCell(colLetter(2 + idx) + r);
+        cc.value = h; cc.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+        cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+        cc.alignment = { horizontal: 'center' };
+      });
+      r++;
+      model.tranches.forEach(function (t, ti) {
+        put(ws, 'B' + r, t.name, '@');
+        var a = { amount: 'C' + r, rateC: 'D' + r, rateO: 'E' + r, grace: 'F' + r, repay: 'G' + r, method: 'H' + r };
+        put(ws, a.amount, t.amount / 100, FMT_M);
+        put(ws, a.rateC, t.rateO, FMT_P);
+        put(ws, a.rateO, t.rateO, FMT_P);
+        put(ws, a.grace, t.graceYears, '0.00');
+        put(ws, a.repay, t.repayYears, '0.00');
+        put(ws, a.method, t.method, '0');
+        IN_ADDR.tranche.push(a);
+        r++;
+      });
+      r += 1;
+
+      if (model.capexItems && model.capexItems.length) {
+        section(ws, r, '총사업비 항목'); r += 2;
+        ['항목', '금액[억원]'].forEach(function (h, idx) {
+          var cc = ws.getCell(colLetter(2 + idx) + r);
+          cc.value = h; cc.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+          cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+          cc.alignment = { horizontal: 'center' };
+        });
+        r++;
+        model.capexItems.forEach(function (it) {
+          put(ws, 'B' + r, it.name, '@');
+          if (it.amountEok != null) put(ws, 'C' + r, it.amountEok, FMT_M);
+          IN_ADDR.capexItem.push({ name: 'B' + r, amount: 'C' + r, hasAmount: it.amountEok != null });
+          r++;
+        });
+        r += 1;
+      }
+
+      if (inp.opexItems && inp.opexItems.length) {
+        section(ws, r, '운영비 항목'); r += 2;
+        ['항목', '연간금액[억원/yr]', '에스컬레이션[%/yr]'].forEach(function (h, idx) {
+          var cc = ws.getCell(colLetter(2 + idx) + r);
+          cc.value = h; cc.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+          cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+          cc.alignment = { horizontal: 'center' };
+        });
+        r++;
+        inp.opexItems.forEach(function (it) {
+          put(ws, 'B' + r, it.name, '@');
+          put(ws, 'C' + r, it.annualKRWm / 100, FMT_M);
+          put(ws, 'D' + r, it.escal || 0, '0.00');
+          IN_ADDR.opexItem.push({ name: 'B' + r, amount: 'C' + r, escal: 'D' + r });
+          r++;
+        });
+        r += 1;
+      }
+
+      var sh0 = model.kpi && model.kpi.shareholders;
+      if (sh0 && sh0.length > 1) {
+        section(ws, r, '사업자 구성'); r += 2;
+        ['사업자', '지분율[%]'].forEach(function (h, idx) {
+          var cc = ws.getCell(colLetter(2 + idx) + r);
+          cc.value = h; cc.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+          cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
+          cc.alignment = { horizontal: 'center' };
+        });
+        r++;
+        sh0.forEach(function (s) {
+          put(ws, 'B' + r, s.name, '@');
+          put(ws, 'C' + r, s.stakePct, '0.00');
+          IN_ADDR.sh.push({ name: 'B' + r, stake: 'C' + r });
+          r++;
+        });
+      }
+
+      r += 1;
+      ws.getCell('B' + r).value = '※ 세금·최저한세·배당가능이익 캡 등 IS(Q)/CF(Q)의 계산 결과는 반복계산·조건부 누적 로직이 얽혀 있어 여기 대상이 아니며 값(baked) 기준입니다. "예시 불러오기"로 채운 실측 오버라이드 분기도 공식이 아니라 실측 사실이라 수식화 대상이 아닙니다.';
+      ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+    })();
 
     /* =========================================================
        1. Funding — 트랜치·자금조달
@@ -175,16 +308,17 @@
         c.alignment = { horizontal: 'center' };
       });
       r++;
-      put(ws, 'B' + r, '자본금'); put(ws, 'C' + r, model.equity, FMT_M); r++;
-      model.tranches.forEach(function (t) {
+      put(ws, 'B' + r, '자본금'); putF(ws, 'C' + r, IN + IN_ADDR.equityEok + '*100', FMT_M); r++;
+      model.tranches.forEach(function (t, ti) {
+        var ia = IN_ADDR.tranche[ti];
         put(ws, 'B' + r, t.name);
-        put(ws, 'C' + r, t.amount, FMT_M);
+        putF(ws, 'C' + r, IN + ia.amount + '*100', FMT_M);
         put(ws, 'D' + r, t.order === undefined ? '' : t.order, '0');
-        put(ws, 'E' + r, t.rateO, FMT_P);
-        put(ws, 'F' + r, t.rateO, FMT_P);
-        put(ws, 'G' + r, t.graceYears, '0.00');
-        put(ws, 'H' + r, t.repayYears, '0.00');
-        put(ws, 'I' + r, t.method, '0');
+        putF(ws, 'E' + r, IN + ia.rateC, FMT_P);
+        putF(ws, 'F' + r, IN + ia.rateO, FMT_P);
+        putF(ws, 'G' + r, IN + ia.grace, '0.00');
+        putF(ws, 'H' + r, IN + ia.repay, '0.00');
+        putF(ws, 'I' + r, IN + ia.method, '0');
         put(ws, 'J' + r, t.repayStartIdx >= 0 ? periods[t.repayStartIdx].endStr : '-', '@');
         r++;
       });
@@ -192,7 +326,7 @@
       section(ws, r, '건설이자(IDC)'); r += 2;
       put(ws, 'B' + r, 'IDC 합계[KRWm]'); put(ws, 'C' + r, model.idc, FMT_M); r++;
       put(ws, 'B' + r, '총투자비(TIC)[KRWm]'); put(ws, 'C' + r, model.tic, FMT_M); r++;
-      put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); put(ws, 'C' + r, inp.capexEok * 100, FMT_M); r++;
+      put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M); r++;
 
       // 총사업비 세부내역 — 화면에서 항목별로 입력했으면 실제 금액, 합계만
       // 입력했으면 항목명만(금액은 빈칸) 표시한다. 어느 쪽이든 항목
@@ -208,9 +342,10 @@
           c.alignment = { horizontal: 'center' };
         });
         r++;
-        model.capexItems.forEach(function (it) {
-          put(ws, 'B' + r, it.name);
-          if (it.amountEok != null) put(ws, 'C' + r, it.amountEok * 100, FMT_M);
+        model.capexItems.forEach(function (it, idx) {
+          var ia = IN_ADDR.capexItem[idx];
+          putF(ws, 'B' + r, IN + ia.name, '@');
+          if (ia.hasAmount) putF(ws, 'C' + r, IN + ia.amount + '*100', FMT_M);
           r++;
         });
         // 항목별 금액을 안 넣었어도(전부 빈칸이어도) 합계는 항상 위
@@ -218,7 +353,7 @@
         // 입력된 총사업비를 그대로 쓰므로 항목을 일부만 채워도 항상
         // 정확하다.
         put(ws, 'B' + r, '합계', '@', { bold: true, fill: SUB_FILL });
-        put(ws, 'C' + r, inp.capexEok * 100, FMT_M, { bold: true, fill: SUB_FILL });
+        putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M, { bold: true, fill: SUB_FILL });
         r++;
       }
 
@@ -234,9 +369,10 @@
           c.alignment = { horizontal: 'center' };
         });
         r++;
-        sh.forEach(function (s) {
-          put(ws, 'B' + r, s.name);
-          put(ws, 'C' + r, s.stakePct / 100, FMT_P);
+        sh.forEach(function (s, idx) {
+          var ia = IN_ADDR.sh[idx];
+          putF(ws, 'B' + r, IN + ia.name, '@');
+          putF(ws, 'C' + r, IN + ia.stake + '/100', FMT_P);
           put(ws, 'D' + r, s.equityKRWm, FMT_M);
           put(ws, 'E' + r, s.dividendKRWm, FMT_M);
           r++;
@@ -585,6 +721,7 @@
       ws.getCell('B3').font = { name: FONT, size: 10, color: { argb: 'FF6B7B76' } };
       var list = [
         ['Report', 'Executive Summary — 핵심 KPI'],
+        ['입력값', '화면에서 입력한 원본 값 — Funding 등이 이 시트를 참조'],
         ['Funding', '자금조달 — 자본금 + 5트랜치 조건'],
         ['Debt', '트랜치별 상환 스케줄 (A/B/C/D/후순위) + 합계'],
         ['Revenue', '발전량 · 매출'],
@@ -608,11 +745,11 @@
         r++;
       });
       r += 1;
-      ws.getCell('B' + r).value = '※ 이 워크북은 값 기준(baked)입니다 — 가정을 바꾸려면 생성기에서 다시 뽑아야 합니다.';
+      ws.getCell('B' + r).value = '※ Funding 시트의 트랜치 조건·총사업비 항목·사업자 지분은 "입력값" 시트를 참조하는 수식입니다(입력값 시트를 고치면 같이 바뀝니다). 그 외 계산 결과(세금·DSCR·배당 등)는 값(baked) 기준이라 가정을 바꾸려면 생성기에서 다시 뽑아야 합니다.';
       ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FFB4573C' } };
     })();
 
-    var order = ['목차', 'Report', 'Funding', 'Debt', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'].concat(
+    var order = ['목차', 'Report', '입력값', 'Funding', 'Debt', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'].concat(
       model.sensitivity && model.sensitivity.length ? ['민감도'] : []
     );
     order.forEach(function (n, idx) {
