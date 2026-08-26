@@ -191,8 +191,12 @@
         sum += v;
         put(ws, pc(n) + r, v, fmt, opt);
       }
-      if (!hasNull && !opt.noSum) put(ws, 'D' + r, sum, fmt, Object.assign({ bold: true }, opt));
+      if (!hasNull && !opt.noSum) putF(ws, 'D' + r, sumFormula(r), fmt, Object.assign({ bold: true }, opt));
     }
+    // D열 합계 — 값이 아니라 그 행의 분기 셀들(E~마지막 열)을 SUM하는
+    // 수식으로 채운다. 각 분기 셀이 baked든 수식이든 상관없이 항상
+    // 정확하고, 분기 셀을 나중에 고쳐도 합계가 같이 따라간다.
+    function sumFormula(r) { return 'SUM(' + firstC + r + ':' + lastC + r + ')'; }
 
     /* =========================================================
        0. 입력값 — 화면(html)에서 key-in한 원본 입력을 한 시트에 모아둔다.
@@ -508,8 +512,7 @@
           if (periods[n].isOp) putF(ws, pc(n) + intRow, pc(n) + openRow + '*' + IN + ia.rateO + '/4', FMT_M);
           else put(ws, pc(n) + intRow, 0, FMT_M);
         }
-        var sumInt = ints.reduce(function (a, b) { return a + b; }, 0);
-        put(ws, 'D' + intRow, sumInt, FMT_M, { bold: true });
+        putF(ws, 'D' + intRow, sumFormula(intRow), FMT_M, { bold: true });
 
         label(ws, prinRow, '원금상환', '[KRWm]');
         for (var n = 0; n < N; n++) {
@@ -525,8 +528,7 @@
             put(ws, pc(n) + prinRow, prins[n], FMT_M);
           }
         }
-        var sumPrin = prins.reduce(function (a, b) { return a + b; }, 0);
-        put(ws, 'D' + prinRow, sumPrin, FMT_M, { bold: true });
+        putF(ws, 'D' + prinRow, sumFormula(prinRow), FMT_M, { bold: true });
 
         label(ws, closeRow, '기말잔액', '[KRWm]', { bold: true });
         for (var n = 0; n < N; n++) {
@@ -536,7 +538,7 @@
         r = closeRow + 1;
         var finalBal = closes[N - 1];
         label(ws, r, '미상환 잔액(검증용)', '[KRWm]');
-        put(ws, 'D' + r, finalBal, FMT_M);
+        putF(ws, 'D' + r, lastC + closeRow, FMT_M);
         put(ws, 'F' + r, Math.abs(finalBal) < 1 ? '완전상환 확인 (OK)' : '경고: 미상환 잔액');
         if (!canFormula) {
           put(ws, 'H' + r, '※ 방식 3(직접 키인) 또는 미사용 트랜치 — 값(baked) 기준', null);
@@ -553,20 +555,20 @@
       for (var n = 0; n < N; n++) {
         putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.intRow; }).join('+'), FMT_M);
       }
-      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.interest; }, 0), FMT_M, { bold: true });
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
       r++;
       var prinTotalRow = r;
       label(ws, r, '원금상환', '[KRWm]');
       for (var n = 0; n < N; n++) {
         putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.prinRow; }).join('+'), FMT_M);
       }
-      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.principal; }, 0), FMT_M, { bold: true });
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
       r++;
       label(ws, r, '원리금(DS)', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) {
         putF(ws, pc(n) + r, pc(n) + intTotalRow + '+' + pc(n) + prinTotalRow, FMT_M, { bold: true });
       }
-      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.ds; }, 0), FMT_M, { bold: true });
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
       DEBT_DS_ROW = r;
       r++;
       label(ws, r, '기말잔액', '[KRWm]');
@@ -603,8 +605,7 @@
         var genFrac = (inp.seasonality && full) ? inp.seasonality[p.end.getUTCMonth() + 1] : frac;
         putF(ws, pc(n) + 9, '(' + annualGenF + ')*' + degF + '*(1-' + IN + IN_ADDR.auxRate + '/100)*' + genFrac, '#,##0');
       }
-      var sumGen = periods.reduce(function (a, pp) { return a + pp.gen; }, 0);
-      put(ws, 'D9', sumGen, '#,##0', { bold: true });
+      putF(ws, 'D9', sumFormula(9), '#,##0', { bold: true });
 
       label(ws, 10, '판매단가', '[원/kWh]');
       label(ws, 12, '영업수익', '[KRWm]', { bold: true, fill: SUB_FILL });
@@ -638,7 +639,7 @@
           putF(ws, pc(n) + 12, pc(n) + '9*' + pc(n) + '10/1000', FMT_M, { bold: true });
         }
       }
-      put(ws, 'D12', rows.reduce(function (a, ro) { return a + ro.revenue; }, 0), FMT_M, { bold: true });
+      putF(ws, 'D12', sumFormula(12), FMT_M, { bold: true });
 
       if (anyOverride) {
         var note = 14;
@@ -671,9 +672,7 @@
             if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, '-(' + opexItemFormulaStr(idx, n) + ')', FMT_M);
             else { var b = itemizedOpex(n); put(ws, pc(n) + r, b ? -b[idx] : 0, FMT_M); }
           }
-          var sumV = 0;
-          for (var n = 0; n < N; n++) { var b = itemizedOpex(n); sumV += b ? -b[idx] : 0; }
-          put(ws, 'D' + r, sumV, FMT_M);
+          putF(ws, 'D' + r, sumFormula(r), FMT_M);
           r++;
         });
         r++;
@@ -697,13 +696,13 @@
           if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, seniorIdx.map(function (i) { return '-' + pc(n) + itemRows[i]; }).join('+'), FMT_M);
           else put(ws, pc(n) + r, periods[n].opexSenior || 0, FMT_M);
         }
-        put(ws, 'D' + r, periods.reduce(function (a, p) { return a + (p.opexSenior || 0); }, 0), FMT_M);
+        putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else if (flatMode) {
         for (var n = 0; n < N; n++) {
           if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, pc(n) + totalRowAddr + '-' + pc(n) + (totalRowAddr - 1), FMT_M);
           else put(ws, pc(n) + r, periods[n].opexSenior || 0, FMT_M);
         }
-        put(ws, 'D' + r, periods.reduce(function (a, p) { return a + (p.opexSenior || 0); }, 0), FMT_M);
+        putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else {
         fillPeriods(ws, r, function (n) { return periods[n].opexSenior || 0; }, FMT_M);
       }
@@ -716,14 +715,14 @@
           if (opexPeriodIsFormulaable(n)) putF(ws, pc(n) + r, subIdx.map(function (i) { return '-' + pc(n) + itemRows[i]; }).join('+'), FMT_M);
           else put(ws, pc(n) + r, periods[n].opexSub || 0, FMT_M);
         }
-        put(ws, 'D' + r, periods.reduce(function (a, p) { return a + (p.opexSub || 0); }, 0), FMT_M);
+        putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else if (flatMode) {
         for (var n = 0; n < N; n++) {
           if (opexPeriodIsFormulaable(n)) {
             putF(ws, pc(n) + r, pc(n) + totalRowAddr + '*' + IN + IN_ADDR.opexSubShare + '/100', FMT_M);
           } else put(ws, pc(n) + r, periods[n].opexSub || 0, FMT_M);
         }
-        put(ws, 'D' + r, periods.reduce(function (a, p) { return a + (p.opexSub || 0); }, 0), FMT_M);
+        putF(ws, 'D' + r, sumFormula(r), FMT_M);
       } else {
         fillPeriods(ws, r, function (n) { return periods[n].opexSub || 0; }, FMT_M);
       }
@@ -742,7 +741,7 @@
           put(ws, pc(n) + r, rows[n].opex, FMT_M, { bold: true });
         }
       }
-      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.opex; }, 0), FMT_M, { bold: true }); r++;
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
 
       if (opexLabelsOnly) {
         r++;
@@ -773,7 +772,7 @@
       // 12행 "영업수익"이 이미 값/수식을 다 가지고 있음 — 로직 중복 방지).
       label(ws, r, '영업수익', '[KRWm]', { bold: true });
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "'Revenue'!" + pc(n) + '12', FMT_M, { bold: true });
-      put(ws, 'D' + r, rows.reduce(function (a, ro) { return a + ro.revenue; }, 0), FMT_M, { bold: true });
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
       r += 2;
 
       // 새로 계산하지 않고 Opex 시트를 그대로 참조한다(항목별 로직이 이미
@@ -786,9 +785,7 @@
           label(ws, r, it.name || ('항목' + (idx + 1)), '[KRWm]', { indent: true });
           var opexRowAddr = OPEX_ITEM_ROWS[idx];
           for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "'Opex'!" + pc(n) + opexRowAddr, FMT_M);
-          var sumV = 0;
-          for (var n = 0; n < N; n++) { var b = itemizedOpex(n); sumV += b ? -b[idx] : 0; }
-          put(ws, 'D' + r, sumV, FMT_M);
+          putF(ws, 'D' + r, sumFormula(r), FMT_M);
           r++;
         });
       } else if (opexLabelsOnly) {
@@ -801,7 +798,7 @@
       }
       label(ws, r, '영업비용 합계', '[KRWm]', { bold: true });
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "-'Opex'!" + pc(n) + OPEX_TOTAL_ROW, FMT_M, { bold: true });
-      put(ws, 'D' + r, -rows.reduce(function (a, ro) { return a + ro.opex; }, 0), FMT_M, { bold: true }); r++;
+      putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       r++;
       label(ws, r, 'EBITDA', '[KRWm]', { bold: true, fill: SUB_FILL });
       fillPeriods(ws, r, function (n) { return rows[n].ebitda; }, FMT_M, { bold: true }); r++;
@@ -821,7 +818,7 @@
           putF(ws, pc(n) + r, '-((' + depBaseF + ')/' + IN + IN_ADDR.depYears + '*(' + p.opMonths + '/12))', FMT_M);
         } else put(ws, pc(n) + r, 0, FMT_M);
       }
-      put(ws, 'D' + r, -rows.reduce(function (a, ro) { return a + ro.dep; }, 0), FMT_M); r++;
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
 
       label(ws, r, '복구충당부채 전입액', '[KRWm]');
       var opPeriodCountIS = periods.filter(function (p) { return p.isOp; }).length;
@@ -830,7 +827,7 @@
           putF(ws, pc(n) + r, '-(' + IN + IN_ADDR.decomEok + '*100/' + opPeriodCountIS + ')', FMT_M);
         } else put(ws, pc(n) + r, -(rows[n].decomAccrual || 0), FMT_M);
       }
-      put(ws, 'D' + r, -rows.reduce(function (a, ro) { return a + (ro.decomAccrual || 0); }, 0), FMT_M); r++;
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
       label(ws, r, '영업이익(EBIT)', '[KRWm]', { bold: true });
       fillPeriods(ws, r, function (n) { return rows[n].ebit; }, FMT_M, { bold: true }); r++;
       label(ws, r, '영업이익률', '[%]');
@@ -847,7 +844,7 @@
           var blk = DEBT_TR_BLOCKS[tii];
           if (blk) {
             for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "-'Debt'!" + pc(n) + blk.intRow, FMT_M);
-            put(ws, 'D' + r, -ti.ints.reduce(function (a, b) { return a + b; }, 0), FMT_M);
+            putF(ws, 'D' + r, sumFormula(r), FMT_M);
           } else {
             fillPeriods(ws, r, function (n) { return -(ti.ints[n] || 0); }, FMT_M);
           }
@@ -892,7 +889,7 @@
       fillPeriods(ws, 9, function (n) { return rows[n].cfads; }, FMT_M, { bold: true });
       label(ws, 10, '원리금(DS)', '[KRWm]');
       for (var n = 0; n < N; n++) putF(ws, pc(n) + 10, "'Debt'!" + pc(n) + DEBT_DS_ROW, FMT_M);
-      put(ws, 'D10', rows.reduce(function (a, ro) { return a + ro.ds; }, 0), FMT_M);
+      putF(ws, 'D10', sumFormula(10), FMT_M);
       label(ws, 11, '단순 DSCR', '[x]', { bold: true });
       // CFADS(9행)÷원리금(10행) — 둘 다 이미 이 시트 안에 있으니 순수 비율
       // 수식으로 연결(원리금이 0에 가까우면 원본과 동일하게 공란 처리).
