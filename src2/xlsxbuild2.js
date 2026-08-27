@@ -243,6 +243,7 @@
     var OPEX_TOTAL_ROW = null;
     var OPEX_SENIOR_ROW = null, OPEX_SUB_ROW = null; // CF(Q)의 CFADS/FCFE가 참조
     var ISQ_TAX_ROW = null, ISQ_AGENTFEE_ROW = null; // CF(Q)의 CFADS가 참조
+    var ISQ_NI_ROW = null; // CF(Q)의 배당가능이익 누적이 참조
     (function () {
       var ws = wb.addWorksheet('입력값', { properties: { tabColor: { argb: INPUT_FILL } } });
       ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 22; ws.getColumn(3).width = 14;
@@ -284,6 +285,9 @@
       IN_ADDR.minCash = kv('최소 보유현금[억원]', inp.minCash || 0, FMT_M);
       IN_ADDR.divDSCR = kv('배당 게이트 — 단순DSCR 최소치[x]', inp.divDSCR || 0, '0.0000');
       IN_ADDR.divCumDSCRVal = kv('배당 게이트 — 누적DSCR 최소치[x]', inp.divCumDSCR != null ? inp.divCumDSCR : 0, '0.0000');
+      if (inp.dividendMonth != null) IN_ADDR.dividendMonth = kv('배당 지급월', inp.dividendMonth, '0');
+      if (inp.firstDividendYear != null) IN_ADDR.firstDividendYear = kv('최초 배당 가능 연도', inp.firstDividendYear, '0');
+      if (inp.dividendMonth == null) IN_ADDR.divStartYear = kv('배당 개시 운영연차', inp.divStartYear || 1, '0');
       r += 1;
 
       section(ws, r, '법인세 가정'); r += 2;
@@ -1072,6 +1076,7 @@
       var taxRow = r;
       ISQ_TAX_ROW = r;
       label(ws, r, '법인세비용', '[KRWm]'); r++; // 데이터는 연도별 산출 표를 만든 뒤 아래서 채운다
+      ISQ_NI_ROW = r;
       label(ws, r, '당기순이익', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + ebtRow + '+' + pc(n) + taxRow, FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
@@ -1266,61 +1271,237 @@
       for (var n = 0; n < N; n++) putF(ws, pc(n) + dsraMoveRow, pc(n) + dsraCloseRow + '-' + pc(n) + dsraOpenRow, FMT_M);
       putF(ws, 'D' + dsraMoveRow, sumFormula(dsraMoveRow), FMT_M);
 
+      // 세금 현금조정(taxAdj) — 오버라이드 분기 중 실제 납부액(taxCash)이 있는
+      // 분기만 발생주의 법인세를 실제 현금 납부액으로 되돌린다. FCFE와
+      // "그 해 원리금상환재원(현금기준)" 둘 다 이 값을 참조하므로 행 하나로
+      // 공유한다.
+      var taxAdjRow = 19;
+      label(ws, taxAdjRow, '(세금 현금조정, 내부용)', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        var ovr0 = ovrByEnd[periods[n].endStr];
+        if (ovr0 && ovr0.taxCash != null) {
+          putF(ws, pc(n) + taxAdjRow, "-'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + '-' + IN + pc(n) + IN_ADDR.ovr.taxCash, FMT_M);
+        } else {
+          put(ws, pc(n) + taxAdjRow, 0, FMT_M);
+        }
+      }
+
       for (var n = 0; n < N; n++) {
         var ovr = ovrByEnd[periods[n].endStr];
         // fcfe -= dsraForFcfe. dsraForFcfe(오버라이드) = -dsraFcfe_실측값이므로
         // "- dsraForFcfe" = "+dsraFcfe_실측값"(부호 반전에 주의).
         var dsraForFcfeF = (ovr && ovr.dsraFcfe != null) ? ('+' + IN + pc(n) + IN_ADDR.ovr.dsraFcfe) : ('-' + pc(n) + dsraMoveRow);
         var decomF = (n === lastOpIdx2) ? ('-' + IN + IN_ADDR.decomEok + '*100') : '';
-        var taxAdjF = (ovr && ovr.taxCash != null)
-          ? ('+(-\'IS(Q)\'!' + pc(n) + ISQ_TAX_ROW + '-' + IN + pc(n) + IN_ADDR.ovr.taxCash + ')' /* -taxRow(양수 세금)=실제 세금, 그 세금-taxCash */)
-          : '';
         putF(ws, pc(n) + 13,
-          pc(n) + '9-' + pc(n) + '10' + dsraForFcfeF + "-'Opex'!" + pc(n) + OPEX_SUB_ROW + decomF + taxAdjF,
+          pc(n) + '9-' + pc(n) + '10' + dsraForFcfeF + "-'Opex'!" + pc(n) + OPEX_SUB_ROW + decomF + '+' + pc(n) + taxAdjRow,
           FMT_M, { bold: true });
       }
       putF(ws, 'D13', sumFormula(13), FMT_M, { bold: true });
-      label(ws, 15, '기초현금', '[KRWm]');
-      fillPeriods(ws, 15, function (n) { return rows[n].cashOpen; }, FMT_M, { noSum: true });
-      label(ws, 16, '배당(연차+청산)', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 16, function (n) { return rows[n].dividend; }, FMT_M, { bold: true });
-      label(ws, 17, '기말현금', '[KRWm]');
-      fillPeriods(ws, 17, function (n) { return rows[n].cashClose; }, FMT_M, { noSum: true });
 
-      // 연도별 DSCR 요약 — "단순DSCR(연 합산)"/"누적DSCR"은 분기 비율이 아니라
-      // 연 단위 지표다: 단순 = 그 해 CFADS합/원리금합, 누적 = (그 해 첫 분기
-      // 기초현금+DSRA기초잔액+그 해 CFADS합)/그 해 원리금합(Report!row233).
-      var dsYearSet = {};
-      periods.forEach(function (p, n) { if (rows[n].ds > 1e-9) dsYearSet[p.year] = true; });
-      var dsYears = Object.keys(dsYearSet).map(Number).sort(function (a, b) { return a - b; });
+      // ---- 가용현금(avail) = 기초현금 + FCFE ----
+      var availRow = 18;
+      label(ws, availRow, '(가용현금=기초현금+FCFE, 내부용)', '[KRWm]');
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + availRow, pc(n) + '15+' + pc(n) + '13', FMT_M);
+
+      // ==========================================================
+      // 배당 게이트 — distributable(배당가능이익 누적)/reserveBalance(이익
+      // 준비금 누적)/pendingDiv(결의~지급 이연)을 분기 단위 체인 수식으로
+      // 연결한다. 실제 "얼마를 배당할지" 결정(decided)과 이익준비금 적립액
+      // (reserveNeed)은 연 1회(12월, decideMonth) 계산되는데, 그 계산엔 그
+      // 해 전체 분기 데이터가 필요해서 아래 "연도별 배당 게이트" 표에서
+      // 연도 단위로 구하고, 분기 체인은 그 표의 결과를 결의월에만 반영한다.
+      // ==========================================================
+      var hasDivMonth = inp.dividendMonth != null;
+      var decideMonth = hasDivMonth ? (inp.dividendMonth === 3 ? 12 : inp.dividendMonth) : null;
+      var isPayQ = periods.map(function (p) { return hasDivMonth && (p.end.getUTCMonth() + 1) === inp.dividendMonth; });
+      var isDecideQ = periods.map(function (p) { return hasDivMonth && p.isOp && (p.end.getUTCMonth() + 1) === decideMonth; });
+      var yrFirstOpIdx = {};
+      periods.forEach(function (p, n) { if (p.isOp && yrFirstOpIdx[p.year] === undefined) yrFirstOpIdx[p.year] = n; });
+      var payQtrOpIdx = {};
+      periods.forEach(function (p, n) { if (isPayQ[n] && p.isOp) payQtrOpIdx[p.year] = n; });
+
+      // 연도별 배당 게이트 표 — 행 번호를 먼저 정해서(아래서 실제로 채움)
+      // 분기 체인이 그 주소를 미리 참조할 수 있게 한다.
+      var g_yrDS = 27, g_yrCF = 28, g_annualDscr = 29, g_annualCumDscr = 30,
+        g_yrCFCash = 31, g_yrReserve = 32, g_yrCashStart = 33, g_yrPostMarch = 34,
+        g_pSimpleOK = 35, g_pCumOK = 36, g_canDecide = 37, g_maxByProfit = 38,
+        g_maxByCash = 39, g_yearlyAvail = 40, g_maxByDscrReserve = 41,
+        g_decided = 42, g_reserveNeed = 43;
+      var divYearSet = {};
+      periods.forEach(function (p, n) { if (isDecideQ[n]) divYearSet[p.year] = true; });
+      var dsYearSet2 = {};
+      periods.forEach(function (p, n) { if (rows[n].ds > 1e-9) dsYearSet2[p.year] = true; });
+      var allYearSet = {};
+      Object.keys(divYearSet).forEach(function (y) { allYearSet[y] = true; });
+      Object.keys(dsYearSet2).forEach(function (y) { allYearSet[y] = true; });
+      var allYears = Object.keys(allYearSet).map(Number).sort(function (a, b) { return a - b; });
+      var gYearCol = {};
+      allYears.forEach(function (y, yi) { gYearCol[y] = colLetter(C0 + yi); });
+
+      var distributableRow = 22, reserveBalanceRow = 23, pendingDivRow = 24;
+      label(ws, distributableRow, '(배당가능이익 누적, 내부용)', '[KRWm]');
+      label(ws, reserveBalanceRow, '(이익준비금 누적, 내부용)', '[KRWm]');
+      label(ws, pendingDivRow, '(결의 대기 배당금, 내부용)', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        var p = periods[n];
+        var prevCol = n > 0 ? pc(n - 1) : null;
+        var gc = hasDivMonth && isDecideQ[n] ? gYearCol[p.year] : null;
+        // distributable += (그 분기 isOp면 NI) - (결의월이면 decided+reserveNeed)
+        var distTerms = [];
+        if (prevCol) distTerms.push(prevCol + distributableRow);
+        if (p.isOp) distTerms.push("'IS(Q)'!" + pc(n) + ISQ_NI_ROW);
+        var distFormula = distTerms.length ? distTerms.join('+') : '0';
+        if (gc) distFormula += '-(' + gc + g_decided + '+' + gc + g_reserveNeed + ')';
+        putF(ws, pc(n) + distributableRow, distFormula, FMT_M, { noSum: true });
+        // reserveBalance += (결의월이면 reserveNeed)
+        var resFormula = prevCol ? (prevCol + reserveBalanceRow) : '0';
+        if (gc) resFormula += '+' + gc + g_reserveNeed;
+        putF(ws, pc(n) + reserveBalanceRow, resFormula, FMT_M, { noSum: true });
+        // pendingDiv: 결의월이면 decided로 교체, 지급월이면 0으로 리셋,
+        // 그 외에는 직전 값을 그대로 이어간다.
+        var pendF;
+        if (gc) pendF = gc + g_decided;
+        else if (hasDivMonth && isPayQ[n]) pendF = '0';
+        else pendF = prevCol ? (prevCol + pendingDivRow) : '0';
+        putF(ws, pc(n) + pendingDivRow, pendF, FMT_M, { noSum: true });
+      }
+
+      // 일반 입력 경로(오버라이드/dividendMonth 없음) 전용 — "그 즉시 스윕"
+      // 근사에 쓰는 분기 누적DSCR 체인(운영개시부터, Debt식 직전열 참조).
+      // dividendMonth가 있는 정밀 경로(당진 프리셋)에서는 안 쓴다.
+      var cumCfadsRow = 46, cumDsRow = 47, cumDscrRow2 = 48;
+      if (!hasDivMonth) {
+        label(ws, cumCfadsRow, '(누적 CFADS, 내부용)', '[KRWm]');
+        label(ws, cumDsRow, '(누적 DS, 내부용)', '[KRWm]');
+        label(ws, cumDscrRow2, '(누적 DSCR, 내부용)', '[x]');
+        for (var n = 0; n < N; n++) {
+          var prevCol = n > 0 ? pc(n - 1) : null;
+          if (periods[n].isOp) {
+            putF(ws, pc(n) + cumCfadsRow, (prevCol ? prevCol + cumCfadsRow + '+' : '') + pc(n) + '9', FMT_M, { noSum: true });
+            putF(ws, pc(n) + cumDsRow, (prevCol ? prevCol + cumDsRow + '+' : '') + pc(n) + '10', FMT_M, { noSum: true });
+            putF(ws, pc(n) + cumDscrRow2, 'IF(' + pc(n) + cumDsRow + '>0,' + pc(n) + cumCfadsRow + '/' + pc(n) + cumDsRow + ',"")', FMT_X, { noSum: true });
+          } else {
+            putF(ws, pc(n) + cumCfadsRow, prevCol ? (prevCol + cumCfadsRow) : '0', FMT_M, { noSum: true });
+            putF(ws, pc(n) + cumDsRow, prevCol ? (prevCol + cumDsRow) : '0', FMT_M, { noSum: true });
+            put(ws, pc(n) + cumDscrRow2, null, FMT_X, { noSum: true });
+          }
+        }
+      }
+
+      label(ws, 15, '기초현금', '[KRWm]');
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + 15, n > 0 ? (pc(n - 1) + '17') : '0', FMT_M, { noSum: true });
+      label(ws, 16, '배당(연차+청산)', '[KRWm]', { bold: true, fill: SUB_FILL });
+      for (var n = 0; n < N; n++) {
+        var divF;
+        if (n === lastOpIdx2) {
+          divF = pc(n) + availRow; // 청산배당: 한도 없이 잔여현금 전액
+        } else if (hasDivMonth) {
+          // 결의월≠지급월 전제(표준 12월결의/3월지급 구조) — 지급월엔 직전
+          // 분기까지 쌓인 결의액을 그대로 지급, 그 외엔 0.
+          divF = (isPayQ[n] && n > 0) ? (pc(n - 1) + pendingDivRow) : '0';
+        } else {
+          // 오버라이드 없는 일반 입력 경로 — 즉시 스윕형 근사(12월결의/3월지급
+          // 타이밍 없이, DSCR 게이트만 보고 그 즉시 최소보유현금 초과분을 배당).
+          if (periods[n].isOp) {
+            var dscrOK = 'OR(ISBLANK(' + pc(n) + '11),' + pc(n) + '11>=' + IN + IN_ADDR.divDSCR + ')';
+            var cumOK = 'OR(ISBLANK(' + pc(n) + cumDscrRow2 + '),' + pc(n) + cumDscrRow2 + '>=' + IN + IN_ADDR.divCumDSCRVal + ')';
+            var startOK = periods[n].opYearIdx + '>=(' + IN + IN_ADDR.divStartYear + '-1)';
+            divF = 'IF(AND(' + startOK + ',' + dscrOK + ',' + cumOK + '),MAX(0,' + pc(n) + availRow + '-' + IN + IN_ADDR.minCash + '*100),0)';
+          } else {
+            divF = '0';
+          }
+        }
+        putF(ws, pc(n) + 16, divF, FMT_M, { bold: true });
+      }
+      putF(ws, 'D16', sumFormula(16), FMT_M, { bold: true });
+      label(ws, 17, '기말현금', '[KRWm]');
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + 17, pc(n) + availRow + '-' + pc(n) + '16', FMT_M, { noSum: true });
+
+      // 연도별 DSCR·배당 게이트 요약 — "단순DSCR(연 합산)"/"누적DSCR"은 분기
+      // 비율이 아니라 연 단위 지표(Report!row233 방식)이고, 배당 결의(decided)/
+      // 이익준비금 적립(reserveNeed)도 그 해 전체 분기 데이터가 있어야 계산
+      //되는 연 단위 값이라 같은 표에 함께 둔다. 위쪽 분기 체인(distributable/
+      // reserveBalance/pendingDiv)은 이 표의 decided/reserveNeed를 결의월에만
+      // 참조해서 반영한다.
       var yrFirstIdx = {};
       periods.forEach(function (p, n) { if (yrFirstIdx[p.year] === undefined) yrFirstIdx[p.year] = n; });
+      var decQtrIdx = {};
+      periods.forEach(function (p, n) { if (isDecideQ[n]) decQtrIdx[p.year] = n; });
+      var reserveCapF = IN + IN_ADDR.equityEok + '*100*0.5';
       var r = 24;
-      section(ws, r, '연도별 DSCR 요약'); r += 2;
-      var dsYearCol = {};
+      section(ws, r, '연도별 DSCR · 배당 게이트'); r += 2;
       label(ws, r, '연도', null);
-      dsYears.forEach(function (y, yi) { dsYearCol[y] = colLetter(C0 + yi); put(ws, dsYearCol[y] + r, y, '0', { bold: true }); });
+      allYears.forEach(function (y) { put(ws, gYearCol[y] + r, y, '0', { bold: true }); });
       r++;
-      var yrDSRow = r; label(ws, r, '원리금 합(연간)', '[KRWm]'); r++;
-      var yrCFRow = r; label(ws, r, 'CFADS 합(연간)', '[KRWm]'); r++;
-      var annualDscrRow = r; label(ws, r, '단순 DSCR(연 합산)', '[x]'); r++;
-      var annualCumDscrRow = r; label(ws, r, '누적 DSCR(연간)', '[x]'); r++;
-      dsYears.forEach(function (y) {
-        var c = dsYearCol[y];
-        var dsTerms = [], cfTerms = [];
-        periods.forEach(function (p, n) { if (p.year === y && rows[n].ds > 1e-9) { dsTerms.push(pc(n) + '10'); cfTerms.push(pc(n) + '9'); } });
-        putF(ws, c + yrDSRow, dsTerms.join('+'), FMT_M);
-        putF(ws, c + yrCFRow, cfTerms.join('+'), FMT_M);
-        putF(ws, c + annualDscrRow, c + yrCFRow + '/' + c + yrDSRow, FMT_X);
+      label(ws, g_yrDS, '원리금 합(연간)', '[KRWm]');
+      label(ws, g_yrCF, 'CFADS 합(연간)', '[KRWm]');
+      label(ws, g_annualDscr, '단순 DSCR(연 합산)', '[x]');
+      label(ws, g_annualCumDscr, '누적 DSCR(연간)', '[x]');
+      label(ws, g_yrCFCash, 'CFADS 합(현금기준, 연간)', '[KRWm]');
+      label(ws, g_yrReserve, '그 해 첫 운영분기 기초현금+DSRA', '[KRWm]');
+      label(ws, g_yrCashStart, '그 해 첫 운영분기 기초현금', '[KRWm]');
+      label(ws, g_yrPostMarch, '그 해 지급월 기초현금-배당', '[KRWm]');
+      label(ws, g_pSimpleOK, '단순DSCR 게이트 통과', '[bool]');
+      label(ws, g_pCumOK, '누적DSCR 게이트 통과', '[bool]');
+      label(ws, g_canDecide, '배당 결의 가능', '[bool]');
+      label(ws, g_maxByProfit, '배당가능이익 한도', '[KRWm]');
+      label(ws, g_maxByCash, '현금 한도', '[KRWm]');
+      label(ws, g_yearlyAvail, '원리금상환재원 기준선', '[KRWm]');
+      label(ws, g_maxByDscrReserve, '원리금상환재원 한도', '[KRWm]');
+      label(ws, g_decided, '결정 배당액', '[KRWm]');
+      label(ws, g_reserveNeed, '이익준비금 적립액', '[KRWm]');
+      r = 44;
+      allYears.forEach(function (y) {
+        var c = gYearCol[y];
+        var dsTerms = [], cfTerms = [], cfCashTerms = [];
+        periods.forEach(function (p, n) {
+          if (p.year === y && rows[n].ds > 1e-9) {
+            dsTerms.push(pc(n) + '10'); cfTerms.push(pc(n) + '9'); cfCashTerms.push(pc(n) + '9+' + pc(n) + taxAdjRow);
+          }
+        });
+        putF(ws, c + g_yrDS, dsTerms.length ? dsTerms.join('+') : '0', FMT_M);
+        putF(ws, c + g_yrCF, cfTerms.length ? cfTerms.join('+') : '0', FMT_M);
+        putF(ws, c + g_annualDscr, 'IF(' + c + g_yrDS + '=0,"",' + c + g_yrCF + '/' + c + g_yrDS + ')', FMT_X);
         var r0 = yrFirstIdx[y];
-        putF(ws, c + annualCumDscrRow, '(' + pc(r0) + '15+' + pc(r0) + dsraOpenRow + '+' + c + yrCFRow + ')/' + c + yrDSRow, FMT_X);
+        putF(ws, c + g_annualCumDscr, 'IF(' + c + g_yrDS + '=0,"",(' + pc(r0) + '15+' + pc(r0) + dsraOpenRow + '+' + c + g_yrCF + ')/' + c + g_yrDS + ')', FMT_X);
+        if (!hasDivMonth || !divYearSet[y]) return; // 배당 게이트는 정밀(dividendMonth) 경로·결의연도만
+        putF(ws, c + g_yrCFCash, cfCashTerms.length ? cfCashTerms.join('+') : '0', FMT_M);
+        var r0op = yrFirstOpIdx[y];
+        putF(ws, c + g_yrReserve, pc(r0op) + '15+' + pc(r0op) + dsraOpenRow, FMT_M);
+        putF(ws, c + g_yrCashStart, pc(r0op) + '15', FMT_M);
+        var pq = payQtrOpIdx[y];
+        if (pq !== undefined) putF(ws, c + g_yrPostMarch, pc(pq) + '15-' + pc(pq) + '16', FMT_M);
+        putF(ws, c + g_pSimpleOK, 'IF(' + c + g_yrDS + '=0,TRUE,' + c + g_annualDscr + '>=' + IN + IN_ADDR.divDSCR + ')', '@');
+        putF(ws, c + g_pCumOK, 'IF(' + c + g_yrDS + '=0,TRUE,' + c + g_annualCumDscr + '>=' + IN + IN_ADDR.divCumDSCRVal + ')', '@');
+        var firstDivOK = (inp.firstDividendYear == null || (y + 1) >= inp.firstDividendYear) ? 'TRUE' : 'FALSE';
+        putF(ws, c + g_canDecide, 'AND(' + firstDivOK + ',' + c + g_pSimpleOK + ',' + c + g_pCumOK + ')', '@');
+        var dq = decQtrIdx[y];
+        // 주의: distributableRow[dq] 셀 자체는 이미 이번 분기의 decided/
+        // reserveNeed 차감이 반영된 "사후" 값이라(그 값이 바로 이 g_decided를
+        // 참조해서 계산되므로) 여기서 그 셀을 그대로 쓰면 순환참조가 된다.
+        // JS 원본도 "차감 전" distributable(직전 잔액+이번 분기 NI)을 쓰므로
+        // 그 값을 직접 다시 조립한다.
+        var distBeforeThisQ = (dq > 0 ? pc(dq - 1) + distributableRow : '0') + "+'IS(Q)'!" + pc(dq) + ISQ_NI_ROW;
+        putF(ws, c + g_maxByProfit, '(' + distBeforeThisQ + ')/1.1', FMT_M);
+        putF(ws, c + g_maxByCash, pc(dq) + availRow + '-' + IN + IN_ADDR.minCash + '*100', FMT_M);
+        // yearlyAvail = (그 해 3월 지급분기가 있으면 그 시점 값, 없으면
+        // 그 해 첫 운영분기 기초현금) + 그 해 현금기준 CFADS합 — 어느 쪽이든
+        // yrCFCash는 항상 더해진다(원본 수식 그대로).
+        putF(ws, c + g_yearlyAvail, (pq !== undefined ? (c + g_yrPostMarch) : (c + g_yrCashStart)) + '+' + c + g_yrCFCash, FMT_M);
+        putF(ws, c + g_maxByDscrReserve, 'MAX(0,' + c + g_yearlyAvail + '-' + c + g_yrDS + '*' + IN + IN_ADDR.divCumDSCRVal + ')', FMT_M);
+        putF(ws, c + g_decided, 'IF(' + c + g_canDecide + ',MAX(0,MIN(MIN(' + c + g_maxByCash + ',' + c + g_maxByProfit + '),' + c + g_maxByDscrReserve + ')),0)', FMT_M);
+        // reserveBalanceRow[dq]도 마찬가지로 이미 이번 분기 reserveNeed가
+        //반영된 사후값이라 순환참조가 된다 — 차감(적립) 전 값(직전 열)을 쓴다.
+        var reserveBefore = dq > 0 ? pc(dq - 1) + reserveBalanceRow : '0';
+        putF(ws, c + g_reserveNeed, 'IF(' + c + g_canDecide + ',MAX(0,MIN(' + c + g_decided + '*0.10,' + reserveCapF + '-' + reserveBefore + ')),0)', FMT_M);
       });
       r += 1;
       section(ws, r, '검증'); r += 2;
+      var dsYears2 = allYears.filter(function (y) { return dsYearSet2[y]; });
       label(ws, r, '최소 단순DSCR(연 합산)', '[x]', { bold: true });
-      putF(ws, 'D' + r, 'MIN(' + dsYearCol[dsYears[0]] + annualDscrRow + ':' + dsYearCol[dsYears[dsYears.length - 1]] + annualDscrRow + ')', FMT_X, { bold: true }); r++;
+      putF(ws, 'D' + r, 'MIN(' + gYearCol[dsYears2[0]] + g_annualDscr + ':' + gYearCol[dsYears2[dsYears2.length - 1]] + g_annualDscr + ')', FMT_X, { bold: true }); r++;
       label(ws, r, '최소 누적DSCR', '[x]', { bold: true });
-      putF(ws, 'D' + r, 'MIN(' + dsYearCol[dsYears[0]] + annualCumDscrRow + ':' + dsYearCol[dsYears[dsYears.length - 1]] + annualCumDscrRow + ')', FMT_X, { bold: true }); r++;
+      putF(ws, 'D' + r, 'MIN(' + gYearCol[dsYears2[0]] + g_annualCumDscr + ':' + gYearCol[dsYears2[dsYears2.length - 1]] + g_annualCumDscr + ')', FMT_X, { bold: true }); r++;
       label(ws, r, '최종 기말현금(음수면 오류)', '[KRWm]', { bold: true });
       putF(ws, 'D' + r, lastC + '17', FMT_M, { bold: true });
     })();
