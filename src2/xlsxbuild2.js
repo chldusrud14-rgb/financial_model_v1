@@ -237,6 +237,10 @@
     var FUNDING_TIC_ADDR = null; // Funding 시트의 TIC(총투자비) 셀 주소 — 감가상각비 수식이 참조
     var FUNDING_IDC_ADDR = null, FUNDING_EQUITY_ADDR = null, FUNDING_DEBT_ADDR = null;
     var DEBT_DS_ROW = null; // Debt 시트 "전체 합계 원리금(DS)" 행 — CF(Q)가 참조
+    var DEBT_INT_TOTAL_ROW = null, DEBT_PRIN_TOTAL_ROW = null; // Debt 전체합계 이자/원금 행 — Report의 IRR 현금흐름이 참조
+    var CFQ_MINDSCR_ROW = null, CFQ_MINCUMDSCR_ROW = null;
+    var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
+    var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
     // Opex 시트가 채운 항목별 행 번호와 "영업비용 합계" 행 번호 — IS(Q)가
     // 재계산하지 않고 그대로 참조하는 데 쓴다.
     var OPEX_ITEM_ROWS = [];
@@ -708,6 +712,7 @@
       label(ws, r, '기초잔액', '[KRWm]');
       fillPeriods(ws, r, function (n) { return rows[n].debtOpen; }, FMT_M, { noSum: true }); r++;
       var intTotalRow = r;
+      DEBT_INT_TOTAL_ROW = r;
       label(ws, r, '이자', '[KRWm]');
       for (var n = 0; n < N; n++) {
         putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.intRow; }).join('+'), FMT_M);
@@ -715,6 +720,7 @@
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
       r++;
       var prinTotalRow = r;
+      DEBT_PRIN_TOTAL_ROW = r;
       label(ws, r, '원금상환', '[KRWm]');
       for (var n = 0; n < N; n++) {
         putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.prinRow; }).join('+'), FMT_M);
@@ -1498,12 +1504,91 @@
       r += 1;
       section(ws, r, '검증'); r += 2;
       var dsYears2 = allYears.filter(function (y) { return dsYearSet2[y]; });
+      CFQ_MINDSCR_ROW = r;
       label(ws, r, '최소 단순DSCR(연 합산)', '[x]', { bold: true });
       putF(ws, 'D' + r, 'MIN(' + gYearCol[dsYears2[0]] + g_annualDscr + ':' + gYearCol[dsYears2[dsYears2.length - 1]] + g_annualDscr + ')', FMT_X, { bold: true }); r++;
+      CFQ_MINCUMDSCR_ROW = r;
       label(ws, r, '최소 누적DSCR', '[x]', { bold: true });
       putF(ws, 'D' + r, 'MIN(' + gYearCol[dsYears2[0]] + g_annualCumDscr + ':' + gYearCol[dsYears2[dsYears2.length - 1]] + g_annualCumDscr + ')', FMT_X, { bold: true }); r++;
       label(ws, r, '최종 기말현금(음수면 오류)', '[KRWm]', { bold: true });
       putF(ws, 'D' + r, lastC + '17', FMT_M, { bold: true });
+
+      /* =========================================================
+         IRR용 분기별 현금흐름 계열 — Report의 IRR들이 참조한다. 부호가
+         자주 바뀌는 분기 현금흐름이라 Excel IRR()의 기본 탐색(10% 근방
+         뉴턴법)이 엉뚱한 근(수백만% 등)에 수렴할 위험이 있다(JS의 irr()가
+         "0% 좌우로 가장 가까운 부호전환 구간"을 스캔하도록 만든 이유와
+         동일) — 그래서 IRR() 두 번째 인자(guess)에 JS가 이미 찾아둔 정답을
+         그대로 넣어 그 근처에서 시작하게 한다. 입력값을 크게 바꾸면 guess가
+         낡아서 다른 근으로 수렴할 수 있으니, 결과가 비정상적으로 크면
+         (수백% 이상) 화면(HTML) 값과 대조할 것.
+         ========================================================= */
+      r += 2;
+      section(ws, r, 'IRR용 현금흐름 (참고)'); r += 2;
+      periodHeader(ws, r); r += 2;
+      var capOutByN = {};
+      model.con.conPs.forEach(function (cp, ci) { capOutByN[cp.n] = (capOutByN[cp.n] || 0) + inp.capexEok * 100 * model.con.curve[ci]; });
+      var equityDrawRow = r;
+      label(ws, r, '자본금 인출', '[KRWm]');
+      for (var n = 0; n < N; n++) put(ws, pc(n) + r, model.con.draws[0][n] || 0, FMT_M);
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
+      CFQ_PROJFLOW_ROW = r;
+      label(ws, r, 'Project 현금흐름', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        var capOutF = capOutByN[n] ? ('-(' + capOutByN[n] + ')') : '';
+        var decomCashF = (n === lastOpIdx2) ? ('-' + IN + IN_ADDR.decomEok + '*100') : '';
+        // projectFcf = EBITDA(=매출-영업비용합계) - 법인세 - 철거비현금(마지막
+        // 운영분기만) - 대리은행수수료 + 운전자본 - 건설기간 유출.
+        putF(ws, pc(n) + r,
+          "'Revenue'!" + pc(n) + "12-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
+          "+'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + decomCashF +
+          "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + capOutF,
+          FMT_M);
+      }
+      r++;
+      CFQ_EQFLOW_ROW = r;
+      label(ws, r, 'Equity 현금흐름(FCFE 기준)', '[KRWm]');
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '13-' + pc(n) + equityDrawRow, FMT_M);
+      r++;
+      CFQ_DIVFLOW_ROW = r;
+      label(ws, r, 'Equity 현금흐름(배당 기준)', '[KRWm]');
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '16-' + pc(n) + equityDrawRow, FMT_M);
+      r++;
+      CFQ_INVFLOW_ROW = r;
+      label(ws, r, 'Investor 현금흐름', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        var debtDrawSum = 0;
+        model.tranches.forEach(function (t) { debtDrawSum += (t.draws[n] || 0); });
+        var idcTermF = (n === model.con.codIdx) ? ('+' + model.con.idcTotal) : '';
+        putF(ws, pc(n) + r,
+          '-' + pc(n) + equityDrawRow + '-(' + debtDrawSum + ")+'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW + "+'Debt'!" + pc(n) + DEBT_PRIN_TOTAL_ROW + '+' + pc(n) + '16' + idcTermF,
+          FMT_M);
+      }
+      r += 2;
+      var lastColRef = lastC;
+      var ppyIrr = inp.ppy || 4;
+      // IRR()은 분기 현금흐름 그대로 넣으면 "분기 기준" 내부수익률을 돌려준다
+      // (연 환산 아님) — JS의 annualize()와 동일하게 (1+분기IRR)^ppy-1로
+      // 연 환산해야 model.kpi 값과 맞는다. guess도 연 단위가 아니라 분기
+      // 단위로 환산해서 넣어야 한다 — 분기 현금흐름은 배당처럼 부호가 자주
+      // 바뀌어 IRR()의 뉴턴법이 guess 스케일이 안 맞으면(연율을 그대로
+      // 넣으면) 엉뚱한 근으로 튀는 걸 실제로 확인했다(Equity/배당 IRR에서
+      // 재현). guess를 분기 스케일로 정확히 맞추면 JS의 스캔 방식과 동일한
+      // 근으로 수렴한다.
+      function irrRow(label2, flowRow, annualGuess) {
+        var qGuess = Math.pow(1 + (annualGuess || 0.08), 1 / ppyIrr) - 1;
+        label(ws, r, label2, '[%]', { bold: true });
+        putF(ws, 'D' + r, '(1+IRR(' + firstC + flowRow + ':' + lastColRef + flowRow + ',' + qGuess + '))^' + ppyIrr + '-1', FMT_P, { bold: true });
+        var rr = r; r++;
+        return rr;
+      }
+      CFQ_PROJIRR_ROW = irrRow('Project IRR(세후)', CFQ_PROJFLOW_ROW, model.kpi.projectIRR || 0.08);
+      CFQ_EQIRR_ROW = irrRow('Equity IRR(FCFE)', CFQ_EQFLOW_ROW, model.kpi.equityIRR || 0.1);
+      CFQ_DIVIRR_ROW = irrRow('Equity IRR(배당)', CFQ_DIVFLOW_ROW, model.kpi.dividendIRR || 0.1);
+      CFQ_INVIRR_ROW = irrRow('Investor IRR', CFQ_INVFLOW_ROW, model.kpi.investorIRR || 0.06);
+      r++;
+      ws.getCell('B' + r).value = '※ IRR()의 두 번째 인자(초기 추정치)에 현재 계산된 값을 넣어 엉뚱한 근으로 수렴하는 걸 방지했습니다. 입력값을 크게 바꿔서 결과가 비정상적으로 크게(수백% 이상) 나오면, 그 근처의 추정치로 다시 만들어야 정확합니다 — 화면(HTML) 값과 대조해서 확인하세요.';
+      ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
     })();
 
     /* =========================================================
@@ -1540,18 +1625,18 @@
       r++;
       section(ws, r, '수익성 지표'); r += 2;
       var k = model.kpi;
-      kv('Project IRR 세전 [%]', k.projectIRRPre, FMT_P);
-      kv('Project IRR 세후 [%]', k.projectIRR, FMT_P);
-      kv('Equity IRR (FCFE) [%]', k.equityIRR, FMT_P);
-      kv('Equity IRR (배당) [%]', k.dividendIRR, FMT_P);
-      kv('Investor IRR [%]', k.investorIRR, FMT_P);
-      kv('최소 단순DSCR(연 합산) [x]', k.minDSCRAnnual, FMT_X);
-      kv('최소 누적DSCR [x]', k.minCumDSCR, FMT_X);
-      kv('총영업수익(전체기간) [KRWm]', k.totalRevenue, FMT_M);
-      kv('총영업비용(전체기간) [KRWm]', k.totalOpex, FMT_M);
-      kv('총선순위이자 [KRWm]', k.totalInterest, FMT_M);
-      kv('총법인세 [KRWm]', k.totalTax, FMT_M);
-      kv('총배당(연차+청산) [KRWm]', k.totalDividend, FMT_M);
+      kv('Project IRR 세전 [%]', k.projectIRRPre, FMT_P); // 세전 현금흐름 계열은 CF(Q)에 없어 baked 유지
+      kvF('Project IRR 세후 [%]', "'CF(Q)'!D" + CFQ_PROJIRR_ROW, FMT_P);
+      kvF('Equity IRR (FCFE) [%]', "'CF(Q)'!D" + CFQ_EQIRR_ROW, FMT_P);
+      kvF('Equity IRR (배당) [%]', "'CF(Q)'!D" + CFQ_DIVIRR_ROW, FMT_P);
+      kvF('Investor IRR [%]', "'CF(Q)'!D" + CFQ_INVIRR_ROW, FMT_P);
+      kvF('최소 단순DSCR(연 합산) [x]', "'CF(Q)'!D" + CFQ_MINDSCR_ROW, FMT_X);
+      kvF('최소 누적DSCR [x]', "'CF(Q)'!D" + CFQ_MINCUMDSCR_ROW, FMT_X);
+      kvF('총영업수익(전체기간) [KRWm]', "'Revenue'!D12", FMT_M);
+      kvF('총영업비용(전체기간) [KRWm]', "'Opex'!D" + OPEX_TOTAL_ROW, FMT_M);
+      kvF('총선순위이자 [KRWm]', "'Debt'!D" + DEBT_INT_TOTAL_ROW, FMT_M);
+      kvF('총법인세 [KRWm]', "-'IS(Q)'!D" + ISQ_TAX_ROW, FMT_M);
+      kvF('총배당(연차+청산) [KRWm]', "'CF(Q)'!D16", FMT_M);
     })();
 
     /* =========================================================
