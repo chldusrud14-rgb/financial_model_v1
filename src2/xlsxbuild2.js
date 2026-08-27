@@ -238,6 +238,9 @@
     var FUNDING_IDC_ADDR = null, FUNDING_EQUITY_ADDR = null, FUNDING_DEBT_ADDR = null;
     var DEBT_DS_ROW = null; // Debt 시트 "전체 합계 원리금(DS)" 행 — CF(Q)가 참조
     var DEBT_INT_TOTAL_ROW = null, DEBT_PRIN_TOTAL_ROW = null; // Debt 전체합계 이자/원금 행 — Report의 IRR 현금흐름이 참조
+    var DEBT_IDC_TOTAL_ROW = null, DEBT_CUMDRAW_ROW = {}, DEBT_IDC_SRC_ROW = {}; // 건설기간 자금조달 섹션 행 주소
+    // 아직 안 만들어진 시트를 참조해야 하는 셀들 — 전부 만든 뒤 마지막에 채운다.
+    var DEFERRED = [];
     var CFQ_MINDSCR_ROW = null, CFQ_MINCUMDSCR_ROW = null;
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
@@ -351,26 +354,53 @@
       }
 
       section(ws, r, '트랜치 조건'); r += 2;
-      ['트랜치', '금액[억원]', '건설금리[%]', '운영금리[%]', '거치(yr)', '상환(yr)', '방식'].forEach(function (h, idx) {
+      ['트랜치', '금액[억원]', '건설금리[%]', '운영금리[%]', '거치(yr)', '상환(yr)', '방식', '투입순서'].forEach(function (h, idx) {
         var cc = ws.getCell(colLetter(2 + idx) + r);
         cc.value = h; cc.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
         cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
         cc.alignment = { horizontal: 'center' };
       });
       r++;
+      // model.tranches에는 rateC(건설금리)가 안 실려 있어서 con.srcs에서 꺼낸다
+      // (srcs[0]=자본금, srcs[ti+1]=ti번째 트랜치). 예전엔 여기에 운영금리를
+      // 그대로 넣어놔서 건설금리 칸이 사실상 잘못된 값이었음 — 이번에 IDC를
+      // 수식화하면서 실제로 참조하게 되므로 바로잡는다.
       model.tranches.forEach(function (t, ti) {
+        var src = model.con.srcs[ti + 1] || {};
         put(ws, 'B' + r, t.name, '@', { fill: INPUT_FILL });
-        var a = { amount: 'C' + r, rateC: 'D' + r, rateO: 'E' + r, grace: 'F' + r, repay: 'G' + r, method: 'H' + r };
+        var a = { amount: 'C' + r, rateC: 'D' + r, rateO: 'E' + r, grace: 'F' + r, repay: 'G' + r, method: 'H' + r, order: 'I' + r };
         put(ws, a.amount, t.amount / 100, FMT_M, { fill: INPUT_FILL });
-        put(ws, a.rateC, t.rateO, FMT_P, { fill: INPUT_FILL });
+        put(ws, a.rateC, src.rateC != null ? src.rateC : t.rateO, FMT_P, { fill: INPUT_FILL });
         put(ws, a.rateO, t.rateO, FMT_P, { fill: INPUT_FILL });
         put(ws, a.grace, t.graceYears, '0.00', { fill: INPUT_FILL });
         put(ws, a.repay, t.repayYears, '0.00', { fill: INPUT_FILL });
         put(ws, a.method, t.method, '0', { fill: INPUT_FILL });
+        put(ws, a.order, src.order != null ? src.order : '', '0', { fill: INPUT_FILL });
         IN_ADDR.tranche.push(a);
         r++;
       });
-      r += 1;
+      // 자본금도 인출 순서상 트랜치들과 같은 워터폴에 참여한다(투입순서 기준).
+      put(ws, 'B' + r, '자본금', '@');
+      putF(ws, 'C' + r, IN_ADDR.equityEok, FMT_M);
+      put(ws, 'I' + r, model.con.srcs[0] ? model.con.srcs[0].order : 1, '0', { fill: INPUT_FILL });
+      IN_ADDR.equityOrder = 'I' + r;
+      IN_ADDR.equityAmountRef = 'C' + r;
+      r += 2;
+
+      // 총사업비 지출 스케줄 — 건설 분기별 지출 비중(합 1). IDC 계산의
+      // 출발점이라 수식화하려면 이 표가 필요하다.
+      if (model.con.conPs && model.con.conPs.length) {
+        for (var c = C0; c <= C0 + N - 1; c++) ws.getColumn(c).width = 11;
+        section(ws, r, '총사업비 지출 스케줄 (건설 분기별 비중)'); r += 2;
+        periodHeader(ws, r); r += 2;
+        label(ws, r, '지출 비중', '[비율]');
+        model.con.conPs.forEach(function (cp, ci) {
+          put(ws, pc(cp.n) + r, model.con.curve[ci], '0.000000', { fill: INPUT_FILL });
+        });
+        putF(ws, 'D' + r, sumFormula(r), '0.000000');
+        IN_ADDR.spendCurveRow = r;
+        r += 2;
+      }
 
       // 방식3(64회차 직접 키인, "예시 불러오기" 전용) 트랜치의 상환비율도
       // 결국 원본에서 그대로 가져온 key-in 데이터다 — Debt 시트에 직접
@@ -560,8 +590,17 @@
       FUNDING_DEBT_ADDR = 'C' + r; r++;
       r += 1;
       section(ws, r, '건설이자(IDC)'); r += 2;
-      put(ws, 'B' + r, 'IDC 합계[KRWm]'); put(ws, 'C' + r, model.idc, FMT_M); FUNDING_IDC_ADDR = 'C' + r; r++;
-      put(ws, 'B' + r, '총투자비(TIC)[KRWm]'); put(ws, 'C' + r, model.tic, FMT_M); FUNDING_TIC_ADDR = 'C' + r; r++;
+      // IDC 합계/TIC는 Debt 시트의 "건설기간 자금조달" 섹션을 참조해야 하는데
+      // 그 시트가 아직 안 만들어졌으므로, 주소만 잡아두고 실제 수식은 마지막에
+      // 채운다(DEFERRED).
+      put(ws, 'B' + r, 'IDC 합계[KRWm]'); FUNDING_IDC_ADDR = 'C' + r;
+      DEFERRED.push(function () { putF(ws, FUNDING_IDC_ADDR, "'Debt'!D" + DEBT_IDC_TOTAL_ROW, FMT_M); });
+      r++;
+      put(ws, 'B' + r, '총투자비(TIC)[KRWm]'); FUNDING_TIC_ADDR = 'C' + r;
+      DEFERRED.push(function () {
+        putF(ws, FUNDING_TIC_ADDR, IN + IN_ADDR.capexEok + "*100+'Debt'!D" + DEBT_IDC_TOTAL_ROW, FMT_M);
+      });
+      r++;
       put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M); r++;
 
       // 총사업비 세부내역 — 화면에서 항목별로 입력했으면 실제 금액, 합계만
@@ -623,8 +662,135 @@
        ========================================================= */
     (function () {
       var ws = sheet('Debt');
-      title(ws, '차입금 상환 스케줄 — 트랜치별 + 합계');
+      title(ws, '차입금 상환 스케줄 — 건설기간 인출 + 트랜치별 상환');
       var r = 4;
+
+      /* =========================================================
+         건설기간 자금조달 — 인출(draw)과 건설이자(IDC)를 수식으로 계산한다.
+
+         원본 JS는 "분기마다 필요한 돈을 투입순서대로 나눠준다"를 반복문으로
+         돌리는데, 그걸 그대로 옮기려면 복잡하다. 대신 수학적으로 동일한
+         **누적 기준**으로 재구성했다:
+
+           누적소요액(n) = 누적소요액(n-1) + 공사비(n) + DSRA(n) + 건설이자(n)
+           누적인출(트랜치) = MIN(MAX(누적소요액 - 선순위 약정합, 0), 자기 그룹
+                              약정합) × 자기 약정액 ÷ 그룹 약정합
+           이번 분기 인출 = 누적인출(n) - 누적인출(n-1)
+           건설이자(n)    = 누적인출(n-1) × 건설금리 ÷ 4
+
+         "같은 투입순서 그룹 안에서는 약정금액 비율대로 나눠 가진다"는 원본
+         로직이 매 분기 잔여여력 비율을 유지하므로(귀납적으로 항상 약정액
+         비례), 누적 기준으로 봐도 정확히 같은 값이 나온다.
+
+         핵심: 건설이자(n)은 "n-1까지의 누적인출"만 참조하므로 **순환참조가
+         아니다** — Debt 시트의 "기초잔액=직전 기말잔액"과 같은 체인이다.
+         (엔진의 60회 반복문도 실제로는 항상 2회 만에 같은 값으로 끝난다 —
+         되먹임이 없는 구조라는 뜻.)
+         ========================================================= */
+      var srcs = model.con.srcs || [];
+      var codIdxC = model.con.codIdx;
+      // 소스별 약정액 셀 참조(자본금은 0번, 트랜치는 1번부터)
+      function srcAmountF(si) {
+        return si === 0
+          ? (IN + IN_ADDR.equityEok + '*100')
+          : (IN + IN_ADDR.tranche[si - 1].amount + '*100');
+      }
+      function sumAmountsF(list) {
+        return list.length ? list.map(srcAmountF).join('+') : '0';
+      }
+      var srcPrior = [], srcGroup = [];
+      srcs.forEach(function (s, si) {
+        var prior = [], group = [];
+        srcs.forEach(function (s2, si2) {
+          if (s2.order < s.order) prior.push(si2);
+          else if (s2.order === s.order) group.push(si2);
+        });
+        srcPrior.push(prior); srcGroup.push(group);
+      });
+
+      section(ws, r, '건설기간 자금조달 (인출·건설이자)'); r += 2;
+      periodHeader(ws, r); r += 2;
+
+      var capexSpendRow = r;
+      label(ws, r, '공사비 지출', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        if (IN_ADDR.spendCurveRow != null) {
+          putF(ws, pc(n) + r, IN + pc(n) + IN_ADDR.spendCurveRow + '*' + IN + IN_ADDR.capexEok + '*100', FMT_M);
+        } else {
+          put(ws, pc(n) + r, 0, FMT_M);
+        }
+      }
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
+
+      var dsraFundRow = r;
+      label(ws, r, 'DSRA 적립', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        if (n === codIdxC) putF(ws, pc(n) + r, IN + IN_ADDR.dsraEok + '*100', FMT_M);
+        else put(ws, pc(n) + r, 0, FMT_M);
+      }
+      putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
+
+      // 소스별 건설이자 — 자본금은 이자가 없으므로 트랜치만.
+      var idcSrcRow = {};
+      srcs.forEach(function (s, si) {
+        if (si === 0) return;
+        idcSrcRow[si] = r;
+        label(ws, r, s.name + ' 건설이자', '[KRWm]', { indent: true });
+        r++;
+      });
+      var idcTotalRow = r;
+      label(ws, r, '건설이자 합계(당기)', '[KRWm]', { bold: true });
+      r++;
+      var cumNeedRow = r;
+      label(ws, r, '누적 소요액', '[KRWm]');
+      r++;
+      var cumDrawRow = {};
+      srcs.forEach(function (s, si) {
+        cumDrawRow[si] = r;
+        label(ws, r, s.name + ' 누적인출', '[KRWm]', { indent: true });
+        r++;
+      });
+
+      // 열 방향으로 채운다 — 같은 열 안에서 건설이자 → 누적소요액 → 누적인출
+      // 순서로 참조가 흐르고, 건설이자만 직전 열을 참조한다.
+      for (var n = 0; n < N; n++) {
+        var prevC2 = n > 0 ? pc(n - 1) : null;
+        srcs.forEach(function (s, si) {
+          if (si === 0) return;
+          var addr = pc(n) + idcSrcRow[si];
+          if (n <= codIdxC && prevC2) {
+            putF(ws, addr, prevC2 + cumDrawRow[si] + '*' + IN + IN_ADDR.tranche[si - 1].rateC + '/' + (inp.ppy || 4), FMT_M);
+          } else {
+            put(ws, addr, 0, FMT_M);
+          }
+        });
+        putF(ws, pc(n) + idcTotalRow,
+          Object.keys(idcSrcRow).map(function (si) { return pc(n) + idcSrcRow[si]; }).join('+') || '0',
+          FMT_M, { bold: true });
+        putF(ws, pc(n) + cumNeedRow,
+          (prevC2 ? prevC2 + cumNeedRow + '+' : '') +
+          pc(n) + capexSpendRow + '+' + pc(n) + dsraFundRow + '+' + pc(n) + idcTotalRow,
+          FMT_M, { noSum: true });
+        srcs.forEach(function (s, si) {
+          var groupF = sumAmountsF(srcGroup[si]);
+          var priorF = sumAmountsF(srcPrior[si]);
+          // 그룹 약정합이 0이면 분자(MIN(...,0))도 0이라 결과가 0이 되지만,
+          // 분모를 IF로 감싸 0으로 나누는 상황 자체를 막는다(#DIV/0! 방지).
+          putF(ws, pc(n) + cumDrawRow[si],
+            'MIN(MAX(' + pc(n) + cumNeedRow + '-(' + priorF + '),0),' + groupF + ')*(' + srcAmountF(si) + ')/IF((' + groupF + ')=0,1,' + groupF + ')',
+            FMT_M, { noSum: true });
+        });
+      }
+      srcs.forEach(function (s, si) {
+        if (si === 0) return;
+        putF(ws, 'D' + idcSrcRow[si], sumFormula(idcSrcRow[si]), FMT_M);
+      });
+      putF(ws, 'D' + idcTotalRow, sumFormula(idcTotalRow), FMT_M, { bold: true });
+      DEBT_IDC_TOTAL_ROW = idcTotalRow;
+      DEBT_CUMDRAW_ROW = cumDrawRow;
+      DEBT_IDC_SRC_ROW = idcSrcRow;
+      r += 2;
+
       section(ws, r, '트랜치별 인출/상환 + 전체 합계'); r += 2;
       periodHeader(ws, r); r += 2;
 
@@ -632,8 +798,7 @@
       // 방식이라 순수 재무공식(PMT 등)으로 완전히 재현 가능 — 이자/원금/잔액을
       // "입력값" 시트를 참조하는 수식으로 연결한다. 방식 3(64회차 직접 키인,
       // "예시 불러오기" 프리셋 전용, 화면에는 없음)은 스케줄 자체가 원본 실측
-      // 데이터라 수식화 대상이 아니라 그대로 값(baked)을 쓴다. 인출/IDC는
-      // 지출곡선·건설기간 배분 로직이 얽혀 있어 이번 단계에서는 baked 유지.
+      // 데이터라 수식화 대상이 아니라 그대로 값(baked)을 쓴다.
       var trBlocks = DEBT_TR_BLOCKS;
       model.tranches.forEach(function (t, ti) {
         var ia = IN_ADDR.tranche[ti];
@@ -660,10 +825,17 @@
           if (n === 0) put(ws, pc(0) + openRow, 0, FMT_M, { noSum: true });
           else putF(ws, pc(n) + openRow, pc(n - 1) + closeRow, FMT_M, { noSum: true });
         }
+        // 인출 = 이번 분기 누적인출 - 직전 분기 누적인출, 건설이자는 위
+        // "건설기간 자금조달" 섹션에서 이미 계산한 행을 그대로 참조한다.
+        var cdRow = DEBT_CUMDRAW_ROW[ti + 1];
         label(ws, drawRow, '인출', '[KRWm]');
-        fillPeriods(ws, drawRow, function (n) { return t.draws[n] || 0; }, FMT_M);
+        for (var n = 0; n < N; n++) {
+          putF(ws, pc(n) + drawRow, pc(n) + cdRow + (n > 0 ? ('-' + pc(n - 1) + cdRow) : ''), FMT_M);
+        }
+        putF(ws, 'D' + drawRow, sumFormula(drawRow), FMT_M);
         label(ws, idcRow, '건설이자(IDC)', '[KRWm]');
-        fillPeriods(ws, idcRow, function (n) { return t.idcSeries[n] || 0; }, FMT_M);
+        for (var n = 0; n < N; n++) putF(ws, pc(n) + idcRow, pc(n) + DEBT_IDC_SRC_ROW[ti + 1], FMT_M);
+        putF(ws, 'D' + idcRow, sumFormula(idcRow), FMT_M);
 
         label(ws, intRow, '이자(운영)', '[KRWm]');
         for (var n = 0; n < N; n++) {
@@ -1551,36 +1723,43 @@
       r += 2;
       section(ws, r, 'IRR용 현금흐름 (참고)'); r += 2;
       periodHeader(ws, r); r += 2;
-      var capOutByN = {};
-      model.con.conPs.forEach(function (cp, ci) { capOutByN[cp.n] = (capOutByN[cp.n] || 0) + inp.capexEok * 100 * model.con.curve[ci]; });
+      // 건설기간 공사비 유출·자본금 인출 모두 이제 라이브 — Debt 시트의
+      // "건설기간 자금조달" 섹션(누적인출)과 입력값 시트의 지출 스케줄을
+      // 그대로 참조한다.
+      var capOutF = function (n) {
+        return IN_ADDR.spendCurveRow != null
+          ? (IN + pc(n) + IN_ADDR.spendCurveRow + '*' + IN + IN_ADDR.capexEok + '*100')
+          : '0';
+      };
       var equityDrawRow = r;
       label(ws, r, '자본금 인출', '[KRWm]');
-      for (var n = 0; n < N; n++) put(ws, pc(n) + r, model.con.draws[0][n] || 0, FMT_M);
+      for (var n = 0; n < N; n++) {
+        var cd0 = DEBT_CUMDRAW_ROW[0];
+        putF(ws, pc(n) + r, "'Debt'!" + pc(n) + cd0 + (n > 0 ? ("-'Debt'!" + pc(n - 1) + cd0) : ''), FMT_M);
+      }
       putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
       CFQ_PROJFLOW_ROW = r;
       label(ws, r, 'Project 현금흐름', '[KRWm]');
       for (var n = 0; n < N; n++) {
-        var capOutF = capOutByN[n] ? ('-(' + capOutByN[n] + ')') : '';
         var decomCashF = (n === lastOpIdx2) ? ('-' + IN + IN_ADDR.decomEok + '*100') : '';
         // projectFcf = EBITDA(=매출-영업비용합계) - 법인세 - 철거비현금(마지막
         // 운영분기만) - 대리은행수수료 + 운전자본 - 건설기간 유출.
         putF(ws, pc(n) + r,
           "'Revenue'!" + pc(n) + "12-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
           "+'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + decomCashF +
-          "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + capOutF,
+          "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + '-(' + capOutF(n) + ')',
           FMT_M);
       }
       r++;
       CFQ_PROJFLOWPRE_ROW = r;
       label(ws, r, 'Project 현금흐름(세전)', '[KRWm]');
       for (var n = 0; n < N; n++) {
-        var capOutF2 = capOutByN[n] ? ('-(' + capOutByN[n] + ')') : '';
         var decomCashF2 = (n === lastOpIdx2) ? ('-' + IN + IN_ADDR.decomEok + '*100') : '';
         // preFlows = EBITDA - 철거비현금 - 대리은행수수료 + 운전자본 -
         // 건설기간 유출 (법인세만 세후 버전과 다름 — 안 뺀다).
         putF(ws, pc(n) + r,
           "'Revenue'!" + pc(n) + "12-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
-          decomCashF2 + "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + capOutF2,
+          decomCashF2 + "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + '-(' + capOutF(n) + ')',
           FMT_M);
       }
       r++;
@@ -1595,11 +1774,14 @@
       CFQ_INVFLOW_ROW = r;
       label(ws, r, 'Investor 현금흐름', '[KRWm]');
       for (var n = 0; n < N; n++) {
-        var debtDrawSum = 0;
-        model.tranches.forEach(function (t) { debtDrawSum += (t.draws[n] || 0); });
-        var idcTermF = (n === model.con.codIdx) ? ('+' + model.con.idcTotal) : '';
+        // 부채 인출 합계 = 트랜치별 (이번 누적인출 - 직전 누적인출)의 합.
+        var debtDrawF = model.tranches.map(function (t, ti) {
+          var cdr = DEBT_CUMDRAW_ROW[ti + 1];
+          return "'Debt'!" + pc(n) + cdr + (n > 0 ? ("-'Debt'!" + pc(n - 1) + cdr) : '');
+        }).join('+') || '0';
+        var idcTermF = (n === model.con.codIdx) ? ("+'Debt'!D" + DEBT_IDC_TOTAL_ROW) : '';
         putF(ws, pc(n) + r,
-          '-' + pc(n) + equityDrawRow + '-(' + debtDrawSum + ")+'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW + "+'Debt'!" + pc(n) + DEBT_PRIN_TOTAL_ROW + '+' + pc(n) + '16' + idcTermF,
+          '-' + pc(n) + equityDrawRow + '-(' + debtDrawF + ")+'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW + "+'Debt'!" + pc(n) + DEBT_PRIN_TOTAL_ROW + '+' + pc(n) + '16' + idcTermF,
           FMT_M);
       }
       r += 2;
@@ -1763,6 +1945,9 @@
       ws.getCell('B' + r).value = '※ Funding 시트의 트랜치 조건·총사업비 항목·사업자 지분은 "입력값" 시트를 참조하는 수식입니다(입력값 시트를 고치면 같이 바뀝니다). 그 외 계산 결과(세금·DSCR·배당 등)는 값(baked) 기준이라 가정을 바꾸려면 생성기에서 다시 뽑아야 합니다.';
       ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FFB4573C' } };
     })();
+
+    // 아직 안 만들어진 시트를 참조해야 했던 셀들을 이제 채운다.
+    DEFERRED.forEach(function (fn) { fn(); });
 
     var order = ['목차', 'Report', '입력값', 'Funding', 'Debt', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'].concat(
       model.sensitivity && model.sensitivity.length ? ['민감도'] : []
