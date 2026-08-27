@@ -241,6 +241,8 @@
     // 재계산하지 않고 그대로 참조하는 데 쓴다.
     var OPEX_ITEM_ROWS = [];
     var OPEX_TOTAL_ROW = null;
+    var OPEX_SENIOR_ROW = null, OPEX_SUB_ROW = null; // CF(Q)의 CFADS/FCFE가 참조
+    var ISQ_TAX_ROW = null, ISQ_AGENTFEE_ROW = null; // CF(Q)의 CFADS가 참조
     (function () {
       var ws = wb.addWorksheet('입력값', { properties: { tabColor: { argb: INPUT_FILL } } });
       ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 22; ws.getColumn(3).width = 14;
@@ -277,6 +279,11 @@
       }
       IN_ADDR.agentFeeKRWm = kv('대리은행수수료(총액)[KRWm]', inp.agentFeeKRWm || 0, FMT_M);
       IN_ADDR.extraTaxDeductionKRWm = kv('기타 비현금 세무손금(총액)[KRWm]', inp.extraTaxDeductionKRWm || 0, FMT_M);
+      IN_ADDR.dsraEok = kv('DSRA 최초 적립액[억원]', inp.dsraEok || 0, FMT_M);
+      IN_ADDR.dsraMonths = kv('DSRA 적립기준(차기 X개월분)', inp.dsraMonths || 0, '0');
+      IN_ADDR.minCash = kv('최소 보유현금[억원]', inp.minCash || 0, FMT_M);
+      IN_ADDR.divDSCR = kv('배당 게이트 — 단순DSCR 최소치[x]', inp.divDSCR || 0, '0.0000');
+      IN_ADDR.divCumDSCRVal = kv('배당 게이트 — 누적DSCR 최소치[x]', inp.divCumDSCR != null ? inp.divCumDSCR : 0, '0.0000');
       r += 1;
 
       section(ws, r, '법인세 가정'); r += 2;
@@ -480,6 +487,10 @@
           ['dsraFcfe', 'DSRA FCFE 조정(실측)', '[KRWm]', FMT_M, function (n) {
             var ovr = ovrByEnd[periods[n].endStr];
             return ovr && ovr.dsraFcfe != null ? ovr.dsraFcfe : null;
+          }],
+          ['wc', '운전자본 증감(실측)', '[KRWm]', FMT_M, function (n) {
+            var ovr = ovrByEnd[periods[n].endStr];
+            return ovr && ovr.wc != null ? ovr.wc : null;
           }]
         ].forEach(function (spec) {
           var key = spec[0], label2 = spec[1], unit = spec[2], fmt = spec[3], getter = spec[4];
@@ -841,6 +852,8 @@
       var flatMode = !opexRows && IN_ADDR.opexEok != null;
       var totalRowAddr = r + 2; // 합계 행 주소(선순위/후순위가 그 행을 참조)
       var seniorRow = r;
+      OPEX_SENIOR_ROW = r;
+      OPEX_SUB_ROW = r + 1; // 후순위운영비 행 — 바로 다음 줄(subRow와 항상 같은 값)
       label(ws, r, '선순위운영비', '[KRWm]');
       if (opexRows && inp.opexItems.some(function (it) { return it.senior !== false; })) {
         var seniorIdx = inp.opexItems.map(function (it, i) { return it.senior !== false ? i : -1; }).filter(function (i) { return i >= 0; });
@@ -1001,6 +1014,7 @@
       putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
 
       var agentFeeRow = r;
+      ISQ_AGENTFEE_ROW = r;
       label(ws, r, '대리은행수수료', '[KRWm]');
       for (var n = 0; n < N; n++) {
         if (isOpNonOverride(n)) {
@@ -1056,6 +1070,7 @@
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + ebitRow + '+' + pc(n) + intTotalRowIS, FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       var taxRow = r;
+      ISQ_TAX_ROW = r;
       label(ws, r, '법인세비용', '[KRWm]'); r++; // 데이터는 연도별 산출 표를 만든 뒤 아래서 채운다
       label(ws, r, '당기순이익', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + ebtRow + '+' + pc(n) + taxRow, FMT_M, { bold: true });
@@ -1189,8 +1204,21 @@
       title(ws, '추정 현금흐름표 (분기) · DSCR · 배당');
       section(ws, 4, '영업/재무 현금흐름');
       periodHeader(ws, 6);
+      // CFADS = 영업수익 - 선순위운영비 + 법인세비용(이미 음수) +
+      // 대리은행수수료(이미 음수) + 운전자본증감(오버라이드 분기만 실측,
+      // 그 외엔 항상 0 — 엔진 자체가 일반 입력 경로에서 wc를 안 씀).
+      var wcTerm = function (n) {
+        var ovr = ovrByEnd[periods[n].endStr];
+        return (ovr && ovr.wc != null) ? ('+' + IN + pc(n) + IN_ADDR.ovr.wc) : '';
+      };
       label(ws, 9, 'CFADS (원리금상환재원)', '[KRWm]', { bold: true, fill: SUB_FILL });
-      fillPeriods(ws, 9, function (n) { return rows[n].cfads; }, FMT_M, { bold: true });
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + 9,
+          "'Revenue'!" + pc(n) + '12-\'Opex\'!' + pc(n) + OPEX_SENIOR_ROW +
+          "+'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n),
+          FMT_M, { bold: true });
+      }
+      putF(ws, 'D9', sumFormula(9), FMT_M, { bold: true });
       label(ws, 10, '원리금(DS)', '[KRWm]');
       for (var n = 0; n < N; n++) putF(ws, pc(n) + 10, "'Debt'!" + pc(n) + DEBT_DS_ROW, FMT_M);
       putF(ws, 'D10', sumFormula(10), FMT_M);
@@ -1201,10 +1229,57 @@
         if (rows[n].ds > 1e-9) putF(ws, pc(n) + 11, pc(n) + '9/' + pc(n) + '10', FMT_X, { bold: true });
         else put(ws, pc(n) + 11, null, FMT_X, { bold: true });
       }
+      // "누적DSCR"은 실제로는 분기 누적이 아니라 연 단위 지표다(Report!row233
+      // "(A+B)/C" — A=그 해 첫 분기 기초현금, B=그 해 첫 분기 DSRA 기초잔액,
+      // C=그 해 CFADS합, D=그 해 원리금합 → (A+B+C)/D). "단순DSCR(연 합산)"도
+      // 마찬가지로 그 해 CFADS합/원리금합이지 분기별 비율이 아니다. 아래
+      // "검증" 섹션에 연도별 요약 표를 별도로 만들어서 계산한다.
+
       label(ws, 13, 'FCFE', '[KRWm]', { bold: true });
-      fillPeriods(ws, 13, function (n) { return rows[n].fcfe; }, FMT_M, { bold: true });
-      label(ws, 14, 'DSRA 증감', '[KRWm]');
-      fillPeriods(ws, 14, function (n) { return rows[n].dsraMove; }, FMT_M);
+      // FCFE = CFADS - DS - DSRA조정(원본: 부호 반대로 뺀다, 오버라이드
+      // 있으면 실측 dsraFcfe, 없으면 DSRA증감을 그대로) - 후순위운영비 -
+      // 철거비현금유출(마지막 운영분기만) + 세금 현금조정(taxCash 오버라이드
+      // 있을 때만, 발생주의 법인세를 실제 납부액으로 되돌림).
+      var lastOpIdx2 = -1;
+      periods.forEach(function (p, i) { if (p.isOp) lastOpIdx2 = i; });
+      var dsraMoveRow = 14, dsraOpenRow = 20, dsraCloseRow = 21;
+      var nqDsra = Math.round((inp.dsraMonths || 0) / (12 / (inp.ppy || 4)));
+      var codIdx = model.con.codIdx;
+      label(ws, dsraOpenRow, '(DSRA 기초잔액, 내부용)', '[KRWm]', { noHide: true });
+      label(ws, dsraCloseRow, '(DSRA 기말잔액, 내부용)', '[KRWm]', { noHide: true });
+      for (var n = 0; n < N; n++) {
+        var prevCol = n > 0 ? pc(n - 1) : null;
+        if (n === codIdx) {
+          putF(ws, pc(n) + dsraOpenRow, IN + IN_ADDR.dsraEok + '*100', FMT_M, { noSum: true });
+        } else {
+          putF(ws, pc(n) + dsraOpenRow, prevCol ? (prevCol + dsraCloseRow) : '0', FMT_M, { noSum: true });
+        }
+        if (periods[n].isOp) {
+          var needTerms = [];
+          for (var k = 1; k <= nqDsra && n + k < N; k++) needTerms.push(pc(n + k) + '10');
+          putF(ws, pc(n) + dsraCloseRow, needTerms.length ? needTerms.join('+') : '0', FMT_M, { noSum: true });
+        } else {
+          putF(ws, pc(n) + dsraCloseRow, pc(n) + dsraOpenRow, FMT_M, { noSum: true });
+        }
+      }
+      label(ws, dsraMoveRow, 'DSRA 증감', '[KRWm]');
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + dsraMoveRow, pc(n) + dsraCloseRow + '-' + pc(n) + dsraOpenRow, FMT_M);
+      putF(ws, 'D' + dsraMoveRow, sumFormula(dsraMoveRow), FMT_M);
+
+      for (var n = 0; n < N; n++) {
+        var ovr = ovrByEnd[periods[n].endStr];
+        // fcfe -= dsraForFcfe. dsraForFcfe(오버라이드) = -dsraFcfe_실측값이므로
+        // "- dsraForFcfe" = "+dsraFcfe_실측값"(부호 반전에 주의).
+        var dsraForFcfeF = (ovr && ovr.dsraFcfe != null) ? ('+' + IN + pc(n) + IN_ADDR.ovr.dsraFcfe) : ('-' + pc(n) + dsraMoveRow);
+        var decomF = (n === lastOpIdx2) ? ('-' + IN + IN_ADDR.decomEok + '*100') : '';
+        var taxAdjF = (ovr && ovr.taxCash != null)
+          ? ('+(-\'IS(Q)\'!' + pc(n) + ISQ_TAX_ROW + '-' + IN + pc(n) + IN_ADDR.ovr.taxCash + ')' /* -taxRow(양수 세금)=실제 세금, 그 세금-taxCash */)
+          : '';
+        putF(ws, pc(n) + 13,
+          pc(n) + '9-' + pc(n) + '10' + dsraForFcfeF + "-'Opex'!" + pc(n) + OPEX_SUB_ROW + decomF + taxAdjF,
+          FMT_M, { bold: true });
+      }
+      putF(ws, 'D13', sumFormula(13), FMT_M, { bold: true });
       label(ws, 15, '기초현금', '[KRWm]');
       fillPeriods(ws, 15, function (n) { return rows[n].cashOpen; }, FMT_M, { noSum: true });
       label(ws, 16, '배당(연차+청산)', '[KRWm]', { bold: true, fill: SUB_FILL });
@@ -1212,14 +1287,42 @@
       label(ws, 17, '기말현금', '[KRWm]');
       fillPeriods(ws, 17, function (n) { return rows[n].cashClose; }, FMT_M, { noSum: true });
 
-      var r = 20;
+      // 연도별 DSCR 요약 — "단순DSCR(연 합산)"/"누적DSCR"은 분기 비율이 아니라
+      // 연 단위 지표다: 단순 = 그 해 CFADS합/원리금합, 누적 = (그 해 첫 분기
+      // 기초현금+DSRA기초잔액+그 해 CFADS합)/그 해 원리금합(Report!row233).
+      var dsYearSet = {};
+      periods.forEach(function (p, n) { if (rows[n].ds > 1e-9) dsYearSet[p.year] = true; });
+      var dsYears = Object.keys(dsYearSet).map(Number).sort(function (a, b) { return a - b; });
+      var yrFirstIdx = {};
+      periods.forEach(function (p, n) { if (yrFirstIdx[p.year] === undefined) yrFirstIdx[p.year] = n; });
+      var r = 24;
+      section(ws, r, '연도별 DSCR 요약'); r += 2;
+      var dsYearCol = {};
+      label(ws, r, '연도', null);
+      dsYears.forEach(function (y, yi) { dsYearCol[y] = colLetter(C0 + yi); put(ws, dsYearCol[y] + r, y, '0', { bold: true }); });
+      r++;
+      var yrDSRow = r; label(ws, r, '원리금 합(연간)', '[KRWm]'); r++;
+      var yrCFRow = r; label(ws, r, 'CFADS 합(연간)', '[KRWm]'); r++;
+      var annualDscrRow = r; label(ws, r, '단순 DSCR(연 합산)', '[x]'); r++;
+      var annualCumDscrRow = r; label(ws, r, '누적 DSCR(연간)', '[x]'); r++;
+      dsYears.forEach(function (y) {
+        var c = dsYearCol[y];
+        var dsTerms = [], cfTerms = [];
+        periods.forEach(function (p, n) { if (p.year === y && rows[n].ds > 1e-9) { dsTerms.push(pc(n) + '10'); cfTerms.push(pc(n) + '9'); } });
+        putF(ws, c + yrDSRow, dsTerms.join('+'), FMT_M);
+        putF(ws, c + yrCFRow, cfTerms.join('+'), FMT_M);
+        putF(ws, c + annualDscrRow, c + yrCFRow + '/' + c + yrDSRow, FMT_X);
+        var r0 = yrFirstIdx[y];
+        putF(ws, c + annualCumDscrRow, '(' + pc(r0) + '15+' + pc(r0) + dsraOpenRow + '+' + c + yrCFRow + ')/' + c + yrDSRow, FMT_X);
+      });
+      r += 1;
       section(ws, r, '검증'); r += 2;
       label(ws, r, '최소 단순DSCR(연 합산)', '[x]', { bold: true });
-      put(ws, 'D' + r, model.kpi.minDSCRAnnual, FMT_X, { bold: true }); r++;
+      putF(ws, 'D' + r, 'MIN(' + dsYearCol[dsYears[0]] + annualDscrRow + ':' + dsYearCol[dsYears[dsYears.length - 1]] + annualDscrRow + ')', FMT_X, { bold: true }); r++;
       label(ws, r, '최소 누적DSCR', '[x]', { bold: true });
-      put(ws, 'D' + r, model.kpi.minCumDSCR, FMT_X, { bold: true }); r++;
+      putF(ws, 'D' + r, 'MIN(' + dsYearCol[dsYears[0]] + annualCumDscrRow + ':' + dsYearCol[dsYears[dsYears.length - 1]] + annualCumDscrRow + ')', FMT_X, { bold: true }); r++;
       label(ws, r, '최종 기말현금(음수면 오류)', '[KRWm]', { bold: true });
-      put(ws, 'D' + r, rows[N - 1].cashClose, FMT_M, { bold: true });
+      putF(ws, 'D' + r, lastC + '17', FMT_M, { bold: true });
     })();
 
     /* =========================================================
