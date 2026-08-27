@@ -710,7 +710,10 @@
 
       section(ws, r, '전체 합계'); r++;
       label(ws, r, '기초잔액', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return rows[n].debtOpen; }, FMT_M, { noSum: true }); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, trBlocks.map(function (b) { return pc(n) + b.openRow; }).join('+'), FMT_M, { noSum: true });
+      }
+      r++;
       var intTotalRow = r;
       DEBT_INT_TOTAL_ROW = r;
       label(ws, r, '이자', '[KRWm]');
@@ -740,8 +743,29 @@
       }
       r++;
       r++;
-      label(ws, r, 'DSRA 기말잔액', '[KRWm]');
-      fillPeriods(ws, r, function (n) { return rows[n].dsraClose; }, FMT_M, { noSum: true });
+      // DSRA 기초/기말잔액 — CF(Q)에서 이미 검증한 것과 같은 로직(차기 X개월분
+      // 원리금을 미리 내다보는 SUM, COD 시점에 최초 적립액으로 리셋)을 이 시트
+      // 자체의 DS 행(DEBT_DS_ROW)만으로 독립적으로 재현한다.
+      var dsraOpenRowD = r, dsraCloseRowD = r + 1;
+      var nqDsraD = Math.round((inp.dsraMonths || 0) / (12 / (inp.ppy || 4)));
+      var codIdxD = model.con.codIdx;
+      label(ws, dsraOpenRowD, 'DSRA 기초잔액', '[KRWm]');
+      label(ws, dsraCloseRowD, 'DSRA 기말잔액', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        var prevColD = n > 0 ? pc(n - 1) : null;
+        if (n === codIdxD) {
+          putF(ws, pc(n) + dsraOpenRowD, IN + IN_ADDR.dsraEok + '*100', FMT_M, { noSum: true });
+        } else {
+          putF(ws, pc(n) + dsraOpenRowD, prevColD ? (prevColD + dsraCloseRowD) : '0', FMT_M, { noSum: true });
+        }
+        if (periods[n].isOp) {
+          var needTermsD = [];
+          for (var k = 1; k <= nqDsraD && n + k < N; k++) needTermsD.push(pc(n + k) + DEBT_DS_ROW);
+          putF(ws, pc(n) + dsraCloseRowD, needTermsD.length ? needTermsD.join('+') : '0', FMT_M, { noSum: true });
+        } else {
+          putF(ws, pc(n) + dsraCloseRowD, pc(n) + dsraOpenRowD, FMT_M, { noSum: true });
+        }
+      }
     })();
 
     /* =========================================================
