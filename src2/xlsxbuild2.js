@@ -1175,7 +1175,10 @@
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + revRowIS + '+' + pc(n) + opexTotalRowIS, FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       label(ws, r, 'EBITDA 마진', '[%]');
-      fillPeriods(ws, r, function (n) { return rows[n].revenue > 0 ? rows[n].ebitda / rows[n].revenue : null; }, FMT_P, { noSum: true }); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, 'IF(' + pc(n) + revRowIS + '<=0,"",' + pc(n) + ebitdaRow + '/' + pc(n) + revRowIS + ')', FMT_P, { noSum: true });
+      }
+      r++;
       r++;
       var depRow = r;
       label(ws, r, '감가상각비', '[KRWm]');
@@ -1197,7 +1200,11 @@
       label(ws, r, '복구충당부채 전입액', '[KRWm]');
       var opPeriodCountIS = periods.filter(function (p) { return p.isOp; }).length;
       for (var n = 0; n < N; n++) {
-        if (isOpNonOverride(n)) {
+        if (ovrByEnd[periods[n].endStr] && IN_ADDR.ovr && IN_ADDR.ovr.decomAccrual != null) {
+          // 오버라이드 분기도 실측치를 "입력값" 시트에 두고 참조한다(다른
+          // 오버라이드 항목들과 동일한 취급 — 예전엔 여기만 값이 박혀 있었음).
+          putF(ws, pc(n) + r, '-' + IN + pc(n) + IN_ADDR.ovr.decomAccrual, FMT_M);
+        } else if (isOpNonOverride(n)) {
           putF(ws, pc(n) + r, '-(' + IN + IN_ADDR.decomEok + '*100/' + opPeriodCountIS + ')', FMT_M);
         } else put(ws, pc(n) + r, -(rows[n].decomAccrual || 0), FMT_M);
       }
@@ -1243,7 +1250,10 @@
       }
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       label(ws, r, '영업이익률', '[%]');
-      fillPeriods(ws, r, function (n) { return rows[n].revenue > 0 ? rows[n].ebit / rows[n].revenue : null; }, FMT_P, { noSum: true }); r++;
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, 'IF(' + pc(n) + revRowIS + '<=0,"",' + pc(n) + ebitRow + '/' + pc(n) + revRowIS + ')', FMT_P, { noSum: true });
+      }
+      r++;
       r++;
 
       var intTotalRowIS;
@@ -1252,12 +1262,14 @@
         // (Debt 시트 자체가 이미 "입력값"을 참조하는 수식이므로, 여기서
         // 또 계산하면 같은 로직이 두 곳에 흩어져 유지보수 위험만 커진다).
         label(ws, r, '이자비용 세부내역', null, { bold: true }); r++;
+        var intDetailRows = [];
         trancheInterest.forEach(function (ti, tii) {
           label(ws, r, ti.name + ' 이자', '[KRWm]', { indent: true });
           var blk = DEBT_TR_BLOCKS[tii];
           if (blk) {
             for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "-'Debt'!" + pc(n) + blk.intRow, FMT_M);
             putF(ws, 'D' + r, sumFormula(r), FMT_M);
+            intDetailRows.push(r);
           } else {
             fillPeriods(ws, r, function (n) { return -(ti.ints[n] || 0); }, FMT_M);
           }
@@ -1265,11 +1277,19 @@
         });
         intTotalRowIS = r;
         label(ws, r, '이자비용 합계', '[KRWm]', { bold: true });
-        fillPeriods(ws, r, function (n) { return -rows[n].interest; }, FMT_M, { bold: true }); r++;
+        // 위 세부내역 행들의 단순 합 — Debt 전체합계를 또 참조하지 않고
+        // 바로 위에 펼쳐놓은 값들을 더해서 표 안에서 검산이 되게 한다.
+        for (var n = 0; n < N; n++) {
+          putF(ws, pc(n) + r,
+            intDetailRows.length ? intDetailRows.map(function (rr) { return pc(n) + rr; }).join('+') : ("-'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW),
+            FMT_M, { bold: true });
+        }
+        putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
       } else {
         intTotalRowIS = r;
         label(ws, r, '이자비용', '[KRWm]');
-        fillPeriods(ws, r, function (n) { return -rows[n].interest; }, FMT_M); r++;
+        for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "-'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW, FMT_M);
+        putF(ws, 'D' + r, sumFormula(r), FMT_M); r++;
       }
       r++;
       var ebtRow = r;
