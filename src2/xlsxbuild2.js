@@ -241,6 +241,7 @@
     var CFQ_MINDSCR_ROW = null, CFQ_MINCUMDSCR_ROW = null;
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
+    var CFQ_PROJFLOWPRE_ROW = null, CFQ_PROJIRRPRE_ROW = null;
     // Opex 시트가 채운 항목별 행 번호와 "영업비용 합계" 행 번호 — IS(Q)가
     // 재계산하지 않고 그대로 참조하는 데 쓴다.
     var OPEX_ITEM_ROWS = [];
@@ -1570,6 +1571,19 @@
           FMT_M);
       }
       r++;
+      CFQ_PROJFLOWPRE_ROW = r;
+      label(ws, r, 'Project 현금흐름(세전)', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        var capOutF2 = capOutByN[n] ? ('-(' + capOutByN[n] + ')') : '';
+        var decomCashF2 = (n === lastOpIdx2) ? ('-' + IN + IN_ADDR.decomEok + '*100') : '';
+        // preFlows = EBITDA - 철거비현금 - 대리은행수수료 + 운전자본 -
+        // 건설기간 유출 (법인세만 세후 버전과 다름 — 안 뺀다).
+        putF(ws, pc(n) + r,
+          "'Revenue'!" + pc(n) + "12-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
+          decomCashF2 + "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + capOutF2,
+          FMT_M);
+      }
+      r++;
       CFQ_EQFLOW_ROW = r;
       label(ws, r, 'Equity 현금흐름(FCFE 기준)', '[KRWm]');
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '13-' + pc(n) + equityDrawRow, FMT_M);
@@ -1606,6 +1620,7 @@
         var rr = r; r++;
         return rr;
       }
+      CFQ_PROJIRRPRE_ROW = irrRow('Project IRR(세전)', CFQ_PROJFLOWPRE_ROW, model.kpi.projectIRRPre || 0.09);
       CFQ_PROJIRR_ROW = irrRow('Project IRR(세후)', CFQ_PROJFLOW_ROW, model.kpi.projectIRR || 0.08);
       CFQ_EQIRR_ROW = irrRow('Equity IRR(FCFE)', CFQ_EQFLOW_ROW, model.kpi.equityIRR || 0.1);
       CFQ_DIVIRR_ROW = irrRow('Equity IRR(배당)', CFQ_DIVFLOW_ROW, model.kpi.dividendIRR || 0.1);
@@ -1648,8 +1663,7 @@
       kvF('차입금 합계 [KRWm]', "'Funding'!" + FUNDING_DEBT_ADDR, FMT_M);
       r++;
       section(ws, r, '수익성 지표'); r += 2;
-      var k = model.kpi;
-      kv('Project IRR 세전 [%]', k.projectIRRPre, FMT_P); // 세전 현금흐름 계열은 CF(Q)에 없어 baked 유지
+      kvF('Project IRR 세전 [%]', "'CF(Q)'!D" + CFQ_PROJIRRPRE_ROW, FMT_P);
       kvF('Project IRR 세후 [%]', "'CF(Q)'!D" + CFQ_PROJIRR_ROW, FMT_P);
       kvF('Equity IRR (FCFE) [%]', "'CF(Q)'!D" + CFQ_EQIRR_ROW, FMT_P);
       kvF('Equity IRR (배당) [%]', "'CF(Q)'!D" + CFQ_DIVIRR_ROW, FMT_P);
