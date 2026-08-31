@@ -235,11 +235,39 @@
   var plantType = 'solar';
   function isFieldVisible(d) { return !d.plant || d.plant === plantType; }
 
-  var PLANT_HINT = {
-    solar: '태양광 기준입니다 — 발전량은 <b>일일 발전시간</b>으로, 총사업비·운영비 항목은 태양광 표준 목록으로 계산합니다.',
-    wind: '풍력 기준입니다 — 발전량은 <b>이용률 × 가동률</b>로, 총사업비·운영비 항목은 풍력 표준 목록(WTG/하부구조물/LTSA 등)으로 계산합니다. 자금조달·부채상환·법인세·배당·IRR 로직은 태양광과 동일합니다.'
-  };
+  /* 발전원 비교표 — 두 모델이 "무엇이 다르고 무엇이 같은지"를 한눈에.
+     선택된 발전원 열을 강조해서, 지금 어느 기준으로 계산되는지 바로 보이게 한다. */
+  var PLANT_CMP = [
+    ['발전량 산식',
+     '설비용량 × <b>일일 발전시간</b> × 365일',
+     '설비용량 × 8,760h × <b>이용률</b> × <b>가동률</b>'],
+    ['전용 입력칸',
+     '일일 발전시간 (h/일)',
+     '이용률 (%) · 가동률 (%)'],
+    ['총사업비 기본항목',
+     'EPC · 감리비 · 공사보험료 · 토지임대료 · 사업개발비 …',
+     'WTG · 하부구조물 · 운송설치 · 해저케이블 · DEVEX …'],
+    ['운영비 기본항목',
+     'O&amp;M · 부지임대료 · 보험료 · 소내전력비 …',
+     'LTSA(WTG/BOP) · 인건비 · 보험료 · REC수수료 …']
+  ];
+  var PLANT_LABEL = { solar: '태양광', wind: '풍력' };
 
+  function plantCmpHtml(pt) {
+    var h = '<table class="plantCmp"><tr><th></th>' +
+      '<th class="' + (pt === 'solar' ? 'col-on' : '') + '">태양광</th>' +
+      '<th class="' + (pt === 'wind' ? 'col-on' : '') + '">풍력</th></tr>';
+    PLANT_CMP.forEach(function (r) {
+      h += '<tr><td>' + r[0] + '</td>' +
+        '<td class="' + (pt === 'solar' ? 'col-on' : '') + '">' + r[1] + '</td>' +
+        '<td class="' + (pt === 'wind' ? 'col-on' : '') + '">' + r[2] + '</td></tr>';
+    });
+    h += '<tr class="same"><td>공통 (동일)</td><td colspan="2">' +
+      '자금조달 · 인출순서 · 건설이자(IDC) · 부채상환(방식 1/2/3) · 판매단가 트랙 · ' +
+      '대금회수 시차 · 법인세 · 배당 · DSCR · IRR — <b>계산 로직은 두 발전원이 완전히 동일</b></td></tr>';
+    h += '</table>';
+    return h;
+  }
   function setPlantType(pt) {
     if (pt === plantType) return;
     plantType = pt;
@@ -251,7 +279,7 @@
     document.querySelectorAll('[data-plant-btn]').forEach(function (b) {
       b.classList.toggle('on', b.getAttribute('data-plant-btn') === pt);
     });
-    var hint = $('#plantHint'); if (hint) hint.innerHTML = PLANT_HINT[pt] || '';
+    var hint = $('#plantHint'); if (hint) hint.innerHTML = plantCmpHtml(pt);
     // 3) 항목 기본 목록 교체 — 사용자가 입력한 금액이 있으면 덮어쓰지 않는다
     //    (발전원을 잘못 눌렀다가 되돌릴 때 입력이 날아가면 안 되므로).
     if (capexDetailOn) readCapexItems();
@@ -1359,7 +1387,7 @@
 
   buildCore();
   (function () {
-    var h = $('#plantHint'); if (h) h.innerHTML = PLANT_HINT[plantType] || '';
+    var h = $('#plantHint'); if (h) h.innerHTML = plantCmpHtml(plantType);
     document.querySelectorAll('[data-plant-btn]').forEach(function (b) {
       b.addEventListener('click', function () { setPlantType(b.getAttribute('data-plant-btn')); });
     });
