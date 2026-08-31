@@ -276,8 +276,14 @@
       IN_ADDR.tariffEscal = kv('판매단가 에스컬레이션[%/yr]', inp.tariffEscal, '0.00');
       IN_ADDR.degradation = kv('발전량 열화율[%/yr]', inp.degradation, '0.00');
       IN_ADDR.auxRate = kv('소내소비율[%]', inp.auxRate, '0.00');
-      if (inp.dailyHours != null) IN_ADDR.dailyHours = kv('일조시간[h/day]', inp.dailyHours, '0.000');
-      else IN_ADDR.capacityFactor = kv('이용률(CF)[%]', inp.capacityFactor, '0.00');
+      // 발전량 산식 입력은 발전원에 따라 하나만 쓴다 — 태양광은 일조시간,
+      // 풍력은 이용률×가동률(availability가 없으면 100%로 본다).
+      if (inp.dailyHours != null) {
+        IN_ADDR.dailyHours = kv('일조시간[h/day]', inp.dailyHours, '0.000');
+      } else {
+        IN_ADDR.capacityFactor = kv('이용률(CF)[%]', inp.capacityFactor, '0.00');
+        IN_ADDR.availability = kv('가동률(Availability)[%]', inp.availability != null ? inp.availability : 100, '0.00');
+      }
       if (inp.depBaseOverride != null) IN_ADDR.depBaseOverride = kv('상각대상액(직접입력)[KRWm]', inp.depBaseOverride, FMT_M);
       else IN_ADDR.depRatio = kv('상각대상 비율(TIC 대비)[%]', inp.depRatio, '0.00');
       IN_ADDR.depYears = kv('감가상각 내용연수[yr]', inp.depYears, '0.0');
@@ -961,7 +967,7 @@
         var degF = 'MAX(0,1-' + IN + IN_ADDR.degradation + '/100*' + p.opYearIdx + ')';
         var annualGenF = inp.dailyHours != null
           ? IN + IN_ADDR.capacityMW + '*' + IN + IN_ADDR.dailyHours + '*365'
-          : IN + IN_ADDR.capacityMW + '*8760*(' + IN + IN_ADDR.capacityFactor + '/100)';
+          : IN + IN_ADDR.capacityMW + '*8760*(' + IN + IN_ADDR.capacityFactor + '/100)*(' + IN + IN_ADDR.availability + '/100)';
         var frac = p.opMonths / 12;
         var full = ppy === 4 && p.opMonths === (12 / ppy);
         var genFrac = (inp.seasonality && full) ? inp.seasonality[p.end.getUTCMonth() + 1] : frac;
