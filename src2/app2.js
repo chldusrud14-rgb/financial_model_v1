@@ -411,7 +411,10 @@
     var sum = CAPEX_ITEMS.reduce(function (a, it) { return a + (it.amountEok || 0); }, 0);
     var box = $('#capexItemSum');
     if (box) box.innerHTML = '<span>항목 합계</span><span>' + sum.toFixed(2) + '억원</span>';
-    if (capexDetailOn) {
+    // 항목 금액을 하나도 안 채운 상태에서는 합계(0)로 총액을 덮지 않는다 —
+    // 체크박스를 눌러보기만 해도 입력해둔 총사업비가 0이 되고, 거기에
+    // 딸린 지출 스케줄까지 0으로 재생성돼 계산이 깨지던 문제.
+    if (capexDetailOn && anyAmount(CAPEX_ITEMS)) {
       var capexEl = $('[data-k="capexEok"]');
       capexEl.value = sum.toFixed(2);
       capexEl.dispatchEvent(new Event('change', { bubbles: true }));
@@ -423,12 +426,37 @@
   // 바로 다음 필드(자본금)가 옆 칸(운영비 표 자리)으로 끌려 올라오는
   // 버그가 있었다 — 항상 그리드 흐름에는 남겨두고, 안 켰을 때는
   // 내용만 비워서 높이가 0에 가깝게 만드는 방식으로 고친다.
+  /* 항목별 입력 토글 — 켜면 합계 필드가 항목 합으로 자동 계산되고 잠긴다.
+     그런데 항목 금액을 아직 안 채운 상태에서 켰다 끄면 합계가 0으로
+     덮여서 원래 입력해둔 총액이 그대로 날아가는 문제가 있었다.
+     (체크박스를 눌러봤다가 되돌리는 건 지극히 정상적인 사용 동작인데
+      그때마다 값이 사라지면 안 된다.)
+     → 켤 때 직전 총액을 기억해두고, 끌 때 항목에 실제로 채운 금액이
+       하나도 없으면 기억해둔 값을 되살린다. 항목을 채웠다면 그건
+       사용자가 의도한 값이므로 계산된 합계를 그대로 둔다. */
+  var capexTotalBeforeDetail = null, opexTotalBeforeDetail = null;
+  function anyAmount(items) {
+    return items.some(function (it) { return it.amountEok !== null && it.amountEok !== undefined && it.amountEok !== ''; });
+  }
   function toggleCapexDetail(on) {
     capexDetailOn = on;
     var capexEl = $('[data-k="capexEok"]');
+    if (on && capexEl) capexTotalBeforeDetail = capexEl.value;
     if (capexEl) capexEl.readOnly = on;
-    if (on) { buildCapexItemGrid(); updateCapexItemSum(); }
-    else { var box = $('#capexItemBox'); if (box) box.innerHTML = ''; }
+    if (on) {
+      buildCapexItemGrid();
+      // 항목이 다 비어 있으면 합계를 0으로 덮지 않고 기존 총액을 유지한다.
+      if (anyAmount(CAPEX_ITEMS)) updateCapexItemSum();
+    } else {
+      var box = $('#capexItemBox'); if (box) box.innerHTML = '';
+      if (capexEl && !anyAmount(CAPEX_ITEMS) && capexTotalBeforeDetail !== null) {
+        capexEl.value = capexTotalBeforeDetail;
+        // 총사업비에 딸린 것들(지출 스케줄·자기자본비율)이 같이 되살아나야 한다.
+        capexEl.dispatchEvent(new Event('change', { bubbles: true }));
+        capexEl.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      capexTotalBeforeDetail = null;
+    }
   }
 
   function opexItemRow(it, idx) {
@@ -534,7 +562,7 @@
     var sum = OPEX_ITEMS.reduce(function (a, it) { return a + (it.amountEok || 0); }, 0);
     var box = $('#opexItemSum');
     if (box) box.innerHTML = '<span>항목 합계(1년차 기준)</span><span>' + sum.toFixed(2) + '억원/yr</span>';
-    if (opexDetailOn) {
+    if (opexDetailOn && anyAmount(OPEX_ITEMS)) {   // 위 updateCapexItemSum 주석 참조
       var opexEl = $('[data-k="opexEok"]');
       opexEl.value = sum.toFixed(2);
       opexEl.dispatchEvent(new Event('change', { bubbles: true }));
@@ -545,9 +573,18 @@
   function toggleOpexDetail(on) {
     opexDetailOn = on;
     var opexEl = $('[data-k="opexEok"]');
+    if (on && opexEl) opexTotalBeforeDetail = opexEl.value;
     if (opexEl) opexEl.readOnly = on;
-    if (on) { buildOpexItemGrid(); updateOpexItemSum(); }
-    else { var box = $('#opexItemBox'); if (box) box.innerHTML = ''; }
+    if (on) {
+      buildOpexItemGrid();
+      if (anyAmount(OPEX_ITEMS)) updateOpexItemSum();   // 위 toggleCapexDetail 주석 참조
+    } else {
+      var box = $('#opexItemBox'); if (box) box.innerHTML = '';
+      if (opexEl && !anyAmount(OPEX_ITEMS) && opexTotalBeforeDetail !== null) {
+        opexEl.value = opexTotalBeforeDetail;
+      }
+      opexTotalBeforeDetail = null;
+    }
   }
 
   function buildTrancheGrid() {

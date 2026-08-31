@@ -1809,13 +1809,25 @@
       });
       r += 1;
       section(ws, r, '검증'); r += 2;
+      // 부채가 전혀 없으면(전액 자본금·트랜치 미사용) 원리금이 있는 연도가
+      // 하나도 없어서 DSCR을 낼 대상 범위 자체가 없다. 예전엔 이때
+      // gYearCol[undefined]가 그대로 붙어 =MIN(undefined29:undefined29)라는
+      // 깨진 수식이 들어갔다 — 그런 경우엔 공란으로 둔다(DSCR 미해당).
       var dsYears2 = allYears.filter(function (y) { return dsYearSet2[y]; });
+      var hasDS = dsYears2.length > 0;
+      function dscrMinF(rowNo) {
+        return 'MIN(' + gYearCol[dsYears2[0]] + rowNo + ':' + gYearCol[dsYears2[dsYears2.length - 1]] + rowNo + ')';
+      }
       CFQ_MINDSCR_ROW = r;
       label(ws, r, '최소 단순DSCR(연 합산)', '[x]', { bold: true });
-      putF(ws, 'D' + r, 'MIN(' + gYearCol[dsYears2[0]] + g_annualDscr + ':' + gYearCol[dsYears2[dsYears2.length - 1]] + g_annualDscr + ')', FMT_X, { bold: true }); r++;
+      if (hasDS) putF(ws, 'D' + r, dscrMinF(g_annualDscr), FMT_X, { bold: true });
+      else put(ws, 'D' + r, '해당없음(부채 없음)', '@', { bold: true });
+      r++;
       CFQ_MINCUMDSCR_ROW = r;
       label(ws, r, '최소 누적DSCR', '[x]', { bold: true });
-      putF(ws, 'D' + r, 'MIN(' + gYearCol[dsYears2[0]] + g_annualCumDscr + ':' + gYearCol[dsYears2[dsYears2.length - 1]] + g_annualCumDscr + ')', FMT_X, { bold: true }); r++;
+      if (hasDS) putF(ws, 'D' + r, dscrMinF(g_annualCumDscr), FMT_X, { bold: true });
+      else put(ws, 'D' + r, '해당없음(부채 없음)', '@', { bold: true });
+      r++;
       label(ws, r, '최종 기말현금(음수면 오류)', '[KRWm]', { bold: true });
       putF(ws, 'D' + r, lastC + '17', FMT_M, { bold: true });
 

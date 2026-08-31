@@ -128,7 +128,10 @@
     var curve = conPs.map(function (p) { return p.conMonths / totConM; });
     if (inp.spendCurve && inp.spendCurve.length === conPs.length) {
       var s = inp.spendCurve.reduce(function (a, b) { return a + b; }, 0);
-      curve = inp.spendCurve.map(function (x) { return x / s; });
+      // 합이 0이면(스케줄을 다 비웠거나 0으로 지운 경우) 0으로 나눠서 곡선이
+      // 통째로 NaN이 되고, 그게 인출·IDC·현금흐름·IRR까지 전부 NaN으로
+      // 번진다. 그럴 땐 조용히 기본(월수 비례) 배분으로 되돌린다.
+      if (s > 1e-12) curve = inp.spendCurve.map(function (x) { return x / s; });
     }
 
     var capex = inp.capexEok * 100, dsra = inp.dsraEok * 100;
