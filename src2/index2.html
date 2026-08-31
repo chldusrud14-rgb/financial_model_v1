@@ -186,6 +186,16 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
 .exampleBar-text b{display:block;font-size:14px;color:var(--brand-d);margin-bottom:4px}
 .exampleBar-text span{display:block;font-size:12px;color:var(--ink2);line-height:1.55}
 .exampleBar .btn{flex:0 0 auto;white-space:nowrap}
+/* 발전원(태양광/풍력) 전환 — 계산 엔진은 공통이고 발전량 산식과 항목
+   기본 목록만 바뀐다는 걸 알려주는 안내를 함께 띄운다. */
+.plantSel{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.plantBtn{appearance:none;border:0;background:#fff;color:var(--ink2);font-size:12px;font-weight:600;
+  padding:6px 14px;cursor:pointer;font-family:inherit;transition:background .12s,color .12s}
+.plantBtn+.plantBtn{border-left:1px solid var(--line)}
+.plantBtn:hover{background:var(--brand-l)}
+.plantBtn.on{background:var(--brand);color:#fff}
+.plantHint{font-size:11px;color:var(--ink2);background:var(--brand-l);border-radius:6px;
+  padding:8px 10px;margin-bottom:12px;line-height:1.5}
 @media (max-width:700px){.exampleBar{flex-direction:column;align-items:stretch}.exampleBar .btn{width:100%}}
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--deep);color:#fff;padding:12px 20px;border-radius:11px;font-size:13px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.2);transition:.25s;pointer-events:none;z-index:99}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -215,8 +225,16 @@ table.tr .pull:hover{background:#DCEEE6;border-color:#B9DACB}
   <div class="cols">
     <div>
       <div class="card">
-        <div class="hd"><span class="badge">1</span><h4>사업 기본 가정</h4></div>
-        <div class="body"><div id="core"></div></div>
+        <div class="hd"><span class="badge">1</span><h4>사업 기본 가정</h4>
+          <div class="plantSel" style="margin-left:auto">
+            <button type="button" class="plantBtn on" data-plant-btn="solar">태양광</button>
+            <button type="button" class="plantBtn" data-plant-btn="wind">풍력</button>
+          </div>
+        </div>
+        <div class="body">
+          <div class="plantHint" id="plantHint"></div>
+          <div id="core"></div>
+        </div>
       </div>
 
       <div class="card">

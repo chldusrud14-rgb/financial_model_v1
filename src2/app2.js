@@ -27,8 +27,17 @@
   var CORE = [
     { k: 'projectName', label: '사업명', type: 'text', def: '태양광 발전사업', essential: true },
     { k: 'capacityMW', label: '설비용량', type: 'number', def: 99.998, unit: 'MW', essential: true },
+    // 발전량 산식 입력은 발전원에 따라 하나만 쓴다(plantType 참조).
+    //  태양광 → dailyHours,  풍력 → capacityFactor × availability
     { k: 'dailyHours', label: '일일 발전시간(환산)', type: 'number', def: 3.77, unit: 'h/day', essential: true,
+      plant: 'solar',
       hint: '하루 24시간 중 정격출력으로 발전한 것으로 환산한 시간. 이용률(%) = 이 값÷24. 보통 3.3~3.9' },
+    { k: 'capacityFactorPct', label: '이용률(Capacity Factor)', type: 'number', def: 30.5, unit: '%', essential: true,
+      plant: 'wind',
+      hint: '정격출력 대비 실제 발전량 비율. 육상풍력 20~30%, 해상풍력 30~40% 수준입니다.' },
+    { k: 'availability', label: '가동률(Availability)', type: 'number', def: 97, unit: '%', essential: true,
+      plant: 'wind',
+      hint: '정비·고장 등으로 못 도는 시간을 뺀 설비 가동 가능 비율. 발전량에 이용률과 곱해서 반영됩니다.' },
     { k: 'tariff', label: 'PPA 또는 SMP+REC 판매단가', type: 'number', def: 154.8, unit: '원/kWh', essential: true,
       hint: 'PPA·SMP+REC 등 여러 단가를 물량가중평균한 값' },
     { k: 'capexEok', label: '총사업비(건설이자 제외)', type: 'number', def: 1410.69, unit: '억원', essential: true,
@@ -118,6 +127,25 @@
     { name: '전력거래수수료', escal: 0, senior: true },
     { name: '관리운영비 성과보수', escal: 0, senior: true }
   ];
+  // 풍력 기본 항목 — KPMG 흑백풍력 모델(Control!143~155, Opex!13~22) 구성 반영.
+  var WIND_CAPEX_ITEMS = ['풍력발전기(WTG)', '하부구조물', '발전기 운송·설치', '육상케이블/변전소',
+    '해저케이블', '변전소·사무소 부지', '민원보상비·전력망', '사업개발비(DEVEX)',
+    '공사보험료', '건설기간 인건비·운영비', '감리비', '공사 예비비'];
+  var WIND_OPEX_ITEMS = [
+    { name: 'LTSA(WTG)', escal: 1.5, senior: true },
+    { name: 'LTSA(BOP)', escal: 1.5, senior: true },
+    { name: '인건비', escal: 1.5, senior: true },
+    { name: '보험료', escal: 1.5, senior: true },
+    { name: '부지임차료', escal: 1.5, senior: true },
+    { name: '전력거래수수료', escal: 0, senior: true },
+    { name: 'REC 발급수수료', escal: 0, senior: true },
+    { name: 'REC 거래수수료', escal: 0, senior: true },
+    { name: '기타경비', escal: 1.5, senior: true },
+    { name: '기타예비비', escal: 0, senior: true }
+  ];
+  function defaultCapexItemsFor(pt) { return pt === 'wind' ? WIND_CAPEX_ITEMS : DEFAULT_CAPEX_ITEMS; }
+  function defaultOpexItemsFor(pt) { return pt === 'wind' ? WIND_OPEX_ITEMS : DEFAULT_OPEX_ITEMS; }
+
   var capexDetailOn = false, opexDetailOn = false;
   var CAPEX_ITEMS = DEFAULT_CAPEX_ITEMS.map(function (n) { return { name: n, amountEok: null }; });
   var OPEX_ITEMS = DEFAULT_OPEX_ITEMS.map(function (d) { return { name: d.name, amountEok: null, escal: d.escal, senior: d.senior }; });
@@ -188,28 +216,98 @@
   // "총사업비+운영비", "자본금+자기자본비율"이 나란히 붙게 한다.
   var ESSENTIAL_ROWS = [
     ['projectName'],
-    ['capacityMW', 'dailyHours'],
+    ['capacityMW', 'dailyHours'],           // dailyHours = 태양광 전용
+    ['capacityFactorPct', 'availability'],  // 둘 다 풍력 전용
     ['tariff'],
     ['capexEok', 'opexEok'],
     ['equityEok', 'equityRatioPct']
   ];
   function fieldByKey(k) { return CORE.filter(function (d) { return d.k === k; })[0]; }
 
+  /* ---------- 발전원(태양광/풍력) ----------
+     계산 엔진의 대부분(자금조달·IDC·부채상환·DSCR·법인세·배당·IRR)은
+     발전원과 무관해서 그대로 공유하고, 실제로 달라지는 것만 전환한다:
+       1) 발전량 산식  — 태양광 일조시간 / 풍력 이용률×가동률
+       2) 총사업비 항목 기본 목록
+       3) 운영비 항목 기본 목록
+     화면/엔진을 따로 만들지 않는 이유는, 나누면 공통 로직을 고칠 때마다
+     양쪽을 똑같이 고쳐야 해서 반드시 어긋나기 때문. */
+  var plantType = 'solar';
+  function isFieldVisible(d) { return !d.plant || d.plant === plantType; }
+
+  var PLANT_HINT = {
+    solar: '태양광 기준입니다 — 발전량은 <b>일일 발전시간</b>으로, 총사업비·운영비 항목은 태양광 표준 목록으로 계산합니다.',
+    wind: '풍력 기준입니다 — 발전량은 <b>이용률 × 가동률</b>로, 총사업비·운영비 항목은 풍력 표준 목록(WTG/하부구조물/LTSA 등)으로 계산합니다. 자금조달·부채상환·법인세·배당·IRR 로직은 태양광과 동일합니다.'
+  };
+
+  function setPlantType(pt) {
+    if (pt === plantType) return;
+    plantType = pt;
+    // 1) 필드/채움칸 표시 전환
+    document.querySelectorAll('[data-plant]').forEach(function (e) {
+      e.style.display = (e.getAttribute('data-plant') === pt) ? '' : 'none';
+    });
+    // 2) 버튼 상태
+    document.querySelectorAll('[data-plant-btn]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-plant-btn') === pt);
+    });
+    var hint = $('#plantHint'); if (hint) hint.innerHTML = PLANT_HINT[pt] || '';
+    // 3) 항목 기본 목록 교체 — 사용자가 입력한 금액이 있으면 덮어쓰지 않는다
+    //    (발전원을 잘못 눌렀다가 되돌릴 때 입력이 날아가면 안 되므로).
+    if (capexDetailOn) readCapexItems();
+    if (opexDetailOn) readOpexItemsDetailed();
+    var capexTouched = CAPEX_ITEMS.some(function (it) { return it.amountEok != null && it.amountEok !== ''; });
+    var opexTouched = OPEX_ITEMS.some(function (it) { return it.amountEok != null && it.amountEok !== ''; });
+    if (!capexTouched) {
+      CAPEX_ITEMS = defaultCapexItemsFor(pt).map(function (n) { return { name: n, amountEok: null }; });
+      buildCapexItemGrid();
+    }
+    if (!opexTouched) {
+      OPEX_ITEMS = defaultOpexItemsFor(pt).map(function (d) { return { name: d.name, amountEok: null, escal: d.escal, senior: d.senior }; });
+      buildOpexItemGrid();
+    }
+    // 4) 사업명 기본값도 발전원에 맞춰 바꿔준다(사용자가 안 고쳤을 때만)
+    var pn = $('[data-k="projectName"]');
+    if (pn && (pn.value === '태양광 발전사업' || pn.value === '풍력 발전사업')) {
+      pn.value = (pt === 'wind') ? '풍력 발전사업' : '태양광 발전사업';
+    }
+    // 발전원을 바꾸면 계산 전제가 달라지므로 프리셋(당진 실측치)은 해제한다.
+    if (usingPreset) { usingPreset = false; dropUnsupportedMethod3(); }
+    toast(pt === 'wind' ? '풍력 기준으로 전환했습니다 — 발전량은 이용률×가동률로 계산됩니다'
+                        : '태양광 기준으로 전환했습니다 — 발전량은 일일 발전시간으로 계산됩니다');
+  }
+
   function buildCore() {
     var wrap = $('#core');
     var essential = el('div', 'grid');
     ESSENTIAL_ROWS.forEach(function (row) {
-      var colsUsed = 0;
+      // 발전원마다 보이는 필드가 달라 행이 쓰는 칸 수도 달라진다 —
+      // 두 경우를 각각 세어서 필요한 쪽에만 채움용 빈 칸을 넣는다.
+      var colsSolar = 0, colsWind = 0;
       row.forEach(function (k) {
         var d = fieldByKey(k);
         if (!d) return;
-        essential.appendChild(fieldEl(d));
-        colsUsed += d.type === 'text' ? 2 : 1; // text 필드는 .full로 2칸 다 씀
+        var w = d.type === 'text' ? 2 : 1; // text 필드는 .full로 2칸 다 씀
+        if (!d.plant || d.plant === 'solar') colsSolar += w;
+        if (!d.plant || d.plant === 'wind') colsWind += w;
+        var fe = fieldEl(d);
+        // 발전원 전환 시 보였다/숨겼다 해야 하므로 표시를 남겨둔다.
+        if (d.plant) { fe.setAttribute('data-plant', d.plant); if (!isFieldVisible(d)) fe.style.display = 'none'; }
+        essential.appendChild(fe);
       });
-      // 2칸 그리드는 자식을 그냥 순서대로 채우기 때문에, 한 칸만 쓴 행은
+      // 2칸 그리드는 자식을 그냥 순서대로 채우기 때문에, 홀수 칸만 쓴 행은
       // 빈 칸을 하나 더 넣어줘야 다음 행이 새 줄에서 시작한다(안 그러면
       // 다음 행 첫 필드가 이 행의 남은 칸에 끼어들어가 버림).
-      if (colsUsed === 1) essential.appendChild(el('div'));
+      if (colsSolar % 2 === 1) {
+        var fs = el('div'); fs.setAttribute('data-plant', 'solar');
+        if (plantType !== 'solar') fs.style.display = 'none';
+        essential.appendChild(fs);
+      }
+      if (colsWind % 2 === 1) {
+        var fw = el('div'); fw.setAttribute('data-plant', 'wind');
+        if (plantType !== 'wind') fw.style.display = 'none';
+        essential.appendChild(fw);
+      }
       // 총사업비/운영비 항목별 입력 표는 해당 필드 바로 아래 줄에 — 위
       // 필드들처럼 반반(1칸씩) 나눠서 나란히 배치한다. display:none으로
       // 숨기면 그리드 흐름에서 아예 빠져버려 다음 필드(자본금)가 옆으로
@@ -715,6 +813,21 @@
      매출 총액은 합쳐도 나눠도 같지만(gen×share×smp + gen×share×w·rec =
      gen×share×(smp+w·rec)), 분리해야 트랙별 회수 시차를 각각 적용할 수 있다.
      RPS 비중이 0이면 전량 PPA라 PPA 트랙 하나만 만든다. */
+  /* 발전량 산식 입력 정규화 — 엔진은 dailyHours가 있으면 태양광 산식(용량×
+     일조시간×365), 없으면 이용률 산식(용량×8760×이용률×가동률)을 쓴다.
+     화면에서 발전원별로 다른 칸을 받으므로 여기서 엔진 입력 형태로 맞춘다. */
+  function applyPlantGen(c) {
+    if (plantType === 'wind') {
+      c.dailyHours = undefined;              // 이용률 경로를 타게 한다
+      c.capacityFactor = c.capacityFactorPct;
+      c.availability = c.availability;
+    } else {
+      c.capacityFactor = undefined;          // dailyHours 우선
+      c.availability = undefined;
+    }
+    return c;
+  }
+
   function buildTariffTracks(c) {
     var rps = (c.rpsShare || 0) / 100;
     var tracks = [];
@@ -733,13 +846,14 @@
     var tranches = readTranches();
     var spendCurve = readSpendCurve();
     var baseInp = Object.assign({}, core, {
-      ppy: 4, capacityFactor: undefined, spendCurve: spendCurve, equityOrder: 1,
+      ppy: 4, spendCurve: spendCurve, equityOrder: 1,
       tranches: tranches.map(function (t) {
         return { name: t.name, amountEok: t.amountEok, order: t.order, rateC: t.rateC, rateO: t.rateO, graceYears: t.graceYears, repayYears: t.repayYears, method: t.method };
       }),
       taxMode: 1, localSurtaxRate: 10
     });
     baseInp.tariffTracks = buildTariffTracks(baseInp);
+    applyPlantGen(baseInp);
     if (opexDetailOn) {
       baseInp.opexItems = readOpexItemsDetailed().map(function (it) {
         return { name: it.name, annualKRWm: (it.amountEok || 0) * 100, escal: it.escal, senior: it.senior };
@@ -949,6 +1063,7 @@
   function loadDangjin() {
     var ref = window.__DANGJIN_REFERENCE__;
     if (!ref) { toast('당진 실측 데이터가 이 빌드에 포함되어 있지 않습니다'); return; }
+    setPlantType('solar');   // 당진은 태양광 프로젝트 — 풍력 상태였으면 되돌린다
     suppressDirty = true;
     setVal('[data-k="projectName"]', '당진 태양광발전');
     setVal('[data-k="capacityMW"]', ref.project.capacityMW);
@@ -1132,7 +1247,6 @@
       var spendCurve = readSpendCurve();
       inp = Object.assign({}, core, {
         ppy: 4,
-        capacityFactor: undefined, // dailyHours 우선 사용
         spendCurve: spendCurve,
         equityOrder: 1,
         tranches: tranches.map(function (t) {
@@ -1146,6 +1260,7 @@
         localSurtaxRate: 10   // 한국 지방소득세(법인세의 10%)는 기본 적용
       });
       inp.tariffTracks = buildTariffTracks(core);
+      applyPlantGen(inp);
       // 운영비 항목별 입력을 켰으면 엔진이 이미 지원하는 opexItems 경로로
       // 넘겨서 계산 자체가 항목별 상승률·선순위/후순위를 반영하게 한다
       // (안 켰으면 기존처럼 총액 근사).
@@ -1167,9 +1282,9 @@
       // (엔진이 쓰는 값이 아니라 순수 표시용), opexDisplayItems는
       // inp.opexItems(실제 계산에 쓰인 항목별 값)가 없을 때만 붙인다 —
       // 있으면 xlsxbuild2.js가 그 실제값으로 이미 항목별 표시를 한다.
-      model.capexItems = capexDetailOn ? readCapexItems() : DEFAULT_CAPEX_ITEMS.map(function (n) { return { name: n, amountEok: null }; });
+      model.capexItems = capexDetailOn ? readCapexItems() : defaultCapexItemsFor(plantType).map(function (n) { return { name: n, amountEok: null }; });
       if (!inp.opexItems) {
-        model.opexDisplayItems = DEFAULT_OPEX_ITEMS.map(function (d) { return { name: d.name, amountEok: null }; });
+        model.opexDisplayItems = defaultOpexItemsFor(plantType).map(function (d) { return { name: d.name, amountEok: null }; });
       }
       renderKPIs();
       $('#xls').disabled = false;
@@ -1206,6 +1321,12 @@
   var sensHint = $('#adminSensHint'); if (sensHint) sensHint.style.display = 'inline';
 
   buildCore();
+  (function () {
+    var h = $('#plantHint'); if (h) h.innerHTML = PLANT_HINT[plantType] || '';
+    document.querySelectorAll('[data-plant-btn]').forEach(function (b) {
+      b.addEventListener('click', function () { setPlantType(b.getAttribute('data-plant-btn')); });
+    });
+  })();
   buildTrancheGrid();
   buildShareholderGrid();
   buildSpendCurve();

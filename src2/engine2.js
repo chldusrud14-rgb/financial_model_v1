@@ -267,9 +267,16 @@
       // capacityMW × dailyHours × 365로 계산(더 정확). 없으면 capacityFactor
       // 기반(capacityMW × 8760 × cf)으로 폴백 — 8760h 환산 반올림 때문에
       // capacityFactor를 dailyHours에서 역산해 넣으면 0.01%대 오차가 남는다.
+      // 발전원별 연간 발전량 산식이 다르다:
+      //  - 태양광: 일조시간(dailyHours) 기반 — 용량 × 일조시간 × 365.
+      //    가동률은 일조시간 안에 이미 녹아 있어 별도로 곱하지 않는다.
+      //  - 풍력  : 이용률(capacityFactor) × 가동률(availability) 기반 —
+      //    용량 × 8760 × 이용률 × 가동률 (KPMG 풍력모델 Control!H69/H70 구조).
+      //    availability가 없으면 100%로 봐서 기존 태양광 계산과 동일해진다.
+      var avail = inp.availability != null ? inp.availability / 100 : 1;
       var annualGen = inp.dailyHours != null
         ? inp.capacityMW * inp.dailyHours * 365
-        : inp.capacityMW * 8760 * (inp.capacityFactor / 100);
+        : inp.capacityMW * 8760 * (inp.capacityFactor / 100) * avail;
       p.gen = annualGen * deg * (1 - inp.auxRate / 100) * genFrac;
       // 매출단가: 트랙별 입력(inp.tariffTracks, 예 PPA1/PPA2/SMP+REC 비중·단가)이
       // 있으면 가중평균 대신 트랙별로 정확히 계산. 없으면 기존 단일 tariff 폴백.
