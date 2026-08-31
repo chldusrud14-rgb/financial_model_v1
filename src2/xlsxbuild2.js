@@ -245,6 +245,7 @@
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
     var CFQ_PROJFLOWPRE_ROW = null, CFQ_PROJIRRPRE_ROW = null;
+    var AR_WC_ROW = null; // Revenue 시트의 '운전자본 증감(A/R)' 행 — CF(Q)가 참조
     // Opex 시트가 채운 항목별 행 번호와 "영업비용 합계" 행 번호 — IS(Q)가
     // 재계산하지 않고 그대로 참조하는 데 쓴다.
     var OPEX_ITEM_ROWS = [];
@@ -334,7 +335,7 @@
 
       if (inp.tariffTracks && inp.tariffTracks.length) {
         section(ws, r, '판매단가 트랙 (PPA/SMP+REC 등)'); r += 2;
-        ['트랙', '비중[%]', '단가[원/kWh]', '에스컬레이션[%/yr]'].forEach(function (h, idx) {
+        ['트랙', '비중[%]', '단가[원/kWh]', '에스컬레이션[%/yr]', '대금회수시차[개월]'].forEach(function (h, idx) {
           var cc = ws.getCell(colLetter(2 + idx) + r);
           cc.value = h; cc.font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
           cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D62' } };
@@ -347,7 +348,8 @@
           put(ws, 'C' + r, tr.share * 100, '0.00', { fill: INPUT_FILL });
           put(ws, 'D' + r, tr.price, '#,##0.0', { fill: INPUT_FILL });
           put(ws, 'E' + r, tr.escal || 0, '0.00', { fill: INPUT_FILL });
-          IN_ADDR.tariffTrack.push({ share: 'C' + r, price: 'D' + r, escal: 'E' + r });
+          put(ws, 'F' + r, tr.arLagMonths != null ? tr.arLagMonths : (inp.arLagMonths || 0), '0.0', { fill: INPUT_FILL });
+          IN_ADDR.tariffTrack.push({ share: 'C' + r, price: 'D' + r, escal: 'E' + r, arLag: 'F' + r });
           r++;
         });
         r += 1;
@@ -1011,6 +1013,73 @@
         ws.getCell('B' + note).value = '※ 실측 오버라이드가 적용된 분기는 "판매단가"가 그 분기의 실제 정산단가(실측 사실, baked)이고, "영업수익"은 다른 분기와 동일하게 발전량×판매단가/1000 수식으로 계산됩니다(값은 원본과 그대로 일치).';
         ws.getCell('B' + note).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       }
+
+      /* =========================================================
+         매출채권(A/R) 회수 시차 → 운전자본 증감
+         전기를 판 분기와 대금이 들어오는 분기가 다르다(PPA·SMP 통상 1개월,
+         REC는 발급·거래 절차가 붙어 2개월). 분기 안에서 매출이 균등하다고
+         보면 기말 미수금 = "마지막 lag개월치 매출"이고, 운전자본 증감은
+         그 잔액의 감소분이다: wc[n] = AR[n-1] - AR[n].
+         운영 마지막 분기엔 남은 미수금을 전액 회수하므로 AR = 0.
+         ========================================================= */
+      var arLagAny = (inp.tariffTracks || []).some(function (t) { return (t.arLagMonths || 0) > 0; }) ||
+        (inp.arLagMonths || 0) > 0;
+      if (arLagAny) {
+        var perM = 12 / (inp.ppy || 4);
+        var lastOpR = -1;
+        periods.forEach(function (p, i) { if (p.isOp) lastOpR = i; });
+        var arStart = 16;
+        section(ws, arStart, '매출채권(A/R) 회수 시차'); arStart += 2;
+        var trackRevRow = {}, arBalRow = {};
+        var rr = arStart;
+        if (hasTracks) {
+          IN_ADDR.tariffTrack.forEach(function (ta, ti) {
+            var nm = (inp.tariffTracks[ti].name) || ('트랙' + (ti + 1));
+            trackRevRow[ti] = rr;
+            label(ws, rr, nm + ' 매출', '[KRWm]', { indent: true });
+            for (var n = 0; n < N; n++) {
+              if (!periods[n].isOp) { put(ws, pc(n) + rr, 0, FMT_M); continue; }
+              putF(ws, pc(n) + rr,
+                pc(n) + '9*' + IN + ta.share + '/100*' + IN + ta.price +
+                '*(1+' + IN + ta.escal + '/100)^' + periods[n].opYearIdx + '/1000', FMT_M);
+            }
+            putF(ws, 'D' + rr, sumFormula(rr), FMT_M);
+            rr++;
+          });
+        } else {
+          trackRevRow[0] = 12;   // 트랙이 없으면 총매출 행을 그대로 쓴다
+        }
+        var trackIdx = hasTracks ? IN_ADDR.tariffTrack.map(function (_, i) { return i; }) : [0];
+        trackIdx.forEach(function (ti) {
+          var nm = hasTracks ? ((inp.tariffTracks[ti].name) || ('트랙' + (ti + 1))) : '전체';
+          arBalRow[ti] = rr;
+          label(ws, rr, nm + ' 기말 미수금', '[KRWm]', { indent: true });
+          var lagRef = hasTracks ? (IN + IN_ADDR.tariffTrack[ti].arLag) : String(inp.arLagMonths || 0);
+          for (var n = 0; n < N; n++) {
+            if (n >= lastOpR) { put(ws, pc(n) + rr, 0, FMT_M, { noSum: true }); continue; }
+            // lag가 분기 길이를 넘을 수 있으므로 직전 분기 매출까지 함께 본다.
+            var cur = pc(n) + trackRevRow[ti];
+            var prv = n > 0 ? (pc(n - 1) + trackRevRow[ti]) : '0';
+            putF(ws, pc(n) + rr,
+              'MIN(' + lagRef + ',' + perM + ')/' + perM + '*' + cur +
+              '+MAX(' + lagRef + '-' + perM + ',0)/' + perM + '*' + prv, FMT_M, { noSum: true });
+          }
+          rr++;
+        });
+        AR_WC_ROW = rr;
+        label(ws, rr, '운전자본 증감(A/R)', '[KRWm]', { bold: true, fill: SUB_FILL });
+        for (var n = 0; n < N; n++) {
+          var terms = trackIdx.map(function (ti) {
+            var prev = n > 0 ? (pc(n - 1) + arBalRow[ti]) : '0';
+            return prev + '-' + pc(n) + arBalRow[ti];
+          }).join('+');
+          putF(ws, pc(n) + rr, terms, FMT_M, { bold: true });
+        }
+        putF(ws, 'D' + rr, sumFormula(rr), FMT_M, { bold: true });
+        rr++;
+        ws.getCell('B' + rr).value = '※ 20년 전체 합계는 0입니다(초기에 묶인 미수금을 마지막에 전액 회수). 다만 분기별로는 크게 움직여서 준공 직후 DSCR과 Equity IRR에 영향을 줍니다.';
+        ws.getCell('B' + rr).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+      }
     })();
 
     /* =========================================================
@@ -1101,13 +1170,23 @@
         putF(ws, 'D' + r, sumFormula(r), FMT_M);
       }
       r++;
-      // 선순위/후순위 행이 이제 항상 수식이나 "입력값" 참조로 채워져
-      // 있으므로(진짜 0인 비운영분기만 예외), 합계는 그냥 그 둘을 더하면
-      // 된다 — 여기서 다시 계산할 필요가 없다.
+      // 합계 행은 **모드에 따라 계산 방향이 반대**라 한쪽으로 통일하면 안 된다:
+      //  - 항목별 입력(opexRows): 항목들 → 선순위/후순위 → 합계 (아래에서 위로)
+      //  - 단순모드(flatMode)   : 합계(총액×에스컬) → 선순위/후순위 (위에서 아래로)
+      // 예전에 합계를 무조건 "선순위+후순위"로 통일했다가 단순모드에서
+      // 선순위=합계-후순위, 후순위=합계×비중, 합계=선순위+후순위가 서로를
+      // 물고 도는 순환참조가 생겼다 — 모드별로 나눠서 채운다.
       OPEX_TOTAL_ROW = r;
       label(ws, r, '영업비용 합계', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) {
-        putF(ws, pc(n) + r, pc(n) + seniorRow + '+' + pc(n) + subRow, FMT_M, { bold: true });
+        var p = periods[n];
+        if (flatMode && opexPeriodIsFormulaable(n)) {
+          putF(ws, pc(n) + r,
+            IN + IN_ADDR.opexEok + '*100*(1+' + IN + IN_ADDR.opexEscal + '/100)^' + p.opYearIdx + '*(' + p.opMonths + '/12)',
+            FMT_M, { bold: true });
+        } else {
+          putF(ws, pc(n) + r, pc(n) + seniorRow + '+' + pc(n) + subRow, FMT_M, { bold: true });
+        }
       }
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true }); r++;
 
@@ -1435,9 +1514,13 @@
       // CFADS = 영업수익 - 선순위운영비 + 법인세비용(이미 음수) +
       // 대리은행수수료(이미 음수) + 운전자본증감(오버라이드 분기만 실측,
       // 그 외엔 항상 0 — 엔진 자체가 일반 입력 경로에서 wc를 안 씀).
+      // 운전자본 증감 — 실측 오버라이드가 있으면 그 값을, 없으면 Revenue
+      // 시트에서 A/R 회수 시차로 계산한 행을 참조한다(둘 다 없으면 0).
       var wcTerm = function (n) {
         var ovr = ovrByEnd[periods[n].endStr];
-        return (ovr && ovr.wc != null) ? ('+' + IN + pc(n) + IN_ADDR.ovr.wc) : '';
+        if (ovr && ovr.wc != null) return '+' + IN + pc(n) + IN_ADDR.ovr.wc;
+        if (AR_WC_ROW) return "+'Revenue'!" + pc(n) + AR_WC_ROW;
+        return '';
       };
       label(ws, 9, 'CFADS (원리금상환재원)', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) {

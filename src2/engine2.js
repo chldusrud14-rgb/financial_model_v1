@@ -216,6 +216,37 @@
     var ovrByEnd = {};
     (inp.periodOverrides || []).forEach(function (o) { ovrByEnd[o.end] = o; });
 
+    /* ---- 매출채권(A/R) 회수 시차 ----
+       전기를 판 달과 대금이 들어오는 달이 다르다(전력거래소 정산 주기, PPA
+       청구·지급 조건). 원본 당진 모델도 `Revenue!row18~20`에 "회수기일 가정"
+       으로 PPA1/PPA2 각각 1개월을 명시해 뒀다. SMP는 통상 1개월, REC는 발급·
+       거래 절차가 더 붙어 2개월이 관례다(KPMG 풍력모델 Control!H72/H73).
+
+       분기 모델에서 매출이 분기 안에서 균등하다고 보면, 기말 미수금 잔액은
+       "마지막 lagMonths개월치 매출"이다. 운전자본 증감(wc)은 그 잔액의 감소분
+       이므로  wc[n] = AR[n-1] - AR[n]  이 된다. 운영 마지막 분기에는 남은
+       미수금을 전액 회수하므로 AR[last] = 0으로 본다.
+
+       이 산식이 원본과 정확히 같은지 당진 80개 분기 전부로 검증했다 —
+       lag 1개월/분기(3개월) 기준 wc[n] = (매출[n-1] - 매출[n])/3, 마지막
+       분기는 매출[n-1]/3. 오차 0으로 일치. */
+    function arLagMonthsOf(track) {
+      if (track && track.arLagMonths != null) return track.arLagMonths;
+      if (inp.arLagMonths != null) return inp.arLagMonths;
+      return 0;
+    }
+    // 특정 트랙의 n분기 기말 미수금 잔액(= 직전 lagM개월치 매출).
+    function arBalanceOf(revsByPeriod, n, lagM, perMonths) {
+      if (lagM <= 0 || n < 0) return 0;
+      var bal = 0, remain = lagM, k = n;
+      while (remain > 1e-12 && k >= 0) {
+        var take = Math.min(remain, perMonths);
+        bal += (revsByPeriod[k] || 0) * (take / perMonths);
+        remain -= take; k--;
+      }
+      return bal;
+    }
+
     /* ---- 매출 / 운영비 ---- */
     var ppyF = 12 / ppy;
     ps.forEach(function (p) {
@@ -245,17 +276,22 @@
       if (ovr) {
         p.revenue = ovr.revenue;
         p.price = p.gen > 0 ? p.revenue / p.gen * 1000 : 0;
+        p.revByTrack = null;   // 실측 오버라이드는 트랙별 분해값이 없다
       } else if (inp.tariffTracks && inp.tariffTracks.length) {
         var rev = 0;
+        p.revByTrack = [];
         inp.tariffTracks.forEach(function (tr) {
           var price = tr.price * Math.pow(1 + (tr.escal || 0) / 100, p.opYearIdx);
-          rev += p.gen * tr.share * price / 1000;
+          var rTr = p.gen * tr.share * price / 1000;
+          p.revByTrack.push(rTr);
+          rev += rTr;
         });
         p.revenue = rev;
         p.price = p.gen > 0 ? rev / p.gen * 1000 : 0;
       } else {
         p.price = inp.tariff * Math.pow(1 + inp.tariffEscal / 100, p.opYearIdx);
         p.revenue = p.gen * p.price / 1000;
+        p.revByTrack = null;
       }
 
       // 운영비: 분기 실측 오버라이드 > 항목별 입력(inp.opexItems) > 총액 근사
@@ -283,6 +319,41 @@
       }
       p.ebitda = p.revenue - p.opex;
     });
+
+    /* ---- 매출채권(A/R) 회수 시차 → 분기별 운전자본 증감 ----
+       트랙별 회수기일이 다를 수 있으므로(PPA 1개월, SMP 1개월, REC 2개월)
+       트랙별 미수금 잔액을 각각 구해 합산한다. 트랙별 분해가 없으면(단일
+       단가 입력) 총매출에 공통 시차를 적용한다. 실측 오버라이드가 있는
+       분기는 원본 값을 그대로 쓰므로 여기서 계산하지 않는다. */
+    var perMonths = 12 / ppy;
+    var wcByPeriod = ps.map(function () { return 0; });
+    var lastOpIdxWc = -1;
+    ps.forEach(function (p, i) { if (p.isOp) lastOpIdxWc = i; });
+    var anyLag = (inp.arLagMonths || 0) > 0 ||
+      (inp.tariffTracks || []).some(function (t) { return (t.arLagMonths || 0) > 0; });
+    if (anyLag && lastOpIdxWc >= 0) {
+      var trackSeries = [];
+      if (inp.tariffTracks && inp.tariffTracks.length && ps[lastOpIdxWc].revByTrack) {
+        inp.tariffTracks.forEach(function (tr, ti) {
+          trackSeries.push({
+            lag: arLagMonthsOf(tr),
+            revs: ps.map(function (p) { return (p.revByTrack && p.revByTrack[ti]) || 0; })
+          });
+        });
+      } else {
+        trackSeries.push({ lag: arLagMonthsOf(null), revs: ps.map(function (p) { return p.revenue || 0; }) });
+      }
+      ps.forEach(function (p, i) {
+        var wc = 0;
+        trackSeries.forEach(function (ts) {
+          var prevAR = arBalanceOf(ts.revs, i - 1, ts.lag, perMonths);
+          // 운영 마지막 분기엔 남은 미수금을 전액 회수한다 → 기말잔액 0.
+          var curAR = (i >= lastOpIdxWc) ? 0 : arBalanceOf(ts.revs, i, ts.lag, perMonths);
+          wc += prevAR - curAR;
+        });
+        wcByPeriod[i] = wc;
+      });
+    }
 
     /* ---- 감가상각 ----
        상각대상은 TIC 전액이 아니라 "건설중인자산 계상액"(TIC!row34) — 토지
@@ -502,8 +573,9 @@
         // 합계는 0이지만 분기별로는 크다(특히 준공 직후 첫 분기).
         var ovrC = ovrByEnd[p.endStr];
         // wc는 CF(Q)!row29 값을 그대로 쓴다 — 이미 부호가 들어있다(현금 유출이면
-        // 음수). 따라서 빼는 게 아니라 더한다.
-        r.wc = ovrC ? (ovrC.wc || 0) : 0;
+        // 음수). 따라서 빼는 게 아니라 더한다. 실측 오버라이드가 없으면 위에서
+        // A/R 회수 시차로 계산한 값을 쓴다(시차 입력이 없으면 0).
+        r.wc = ovrC ? (ovrC.wc || 0) : wcByPeriod[i];
         r.cfads = p.revenue - p.opexSenior - r.tax - r.agentFee + r.wc;
         r.dscr = r.ds > 1e-9 ? r.cfads / r.ds : null;
 

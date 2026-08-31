@@ -67,6 +67,12 @@
       hint: 'RPS 비중이 0보다 클 때만 사용됩니다.' },
     { k: 'recWeight', label: 'REC 가중치', type: 'number', def: 1, unit: '배', group: '매출',
       hint: '설비용량 구간별 REC 가중치. RPS 비중이 0(전량 PPA)이면 의미가 없어 자동으로 1로 고정되고 입력이 잠깁니다.' },
+    { k: 'arLagPPA', label: 'PPA 대금 회수 시차', type: 'number', def: 1, unit: '개월', group: '매출',
+      hint: '전기를 판 달과 대금이 실제로 들어오는 달의 차이. 검침·청구·지급 주기 때문에 통상 1개월입니다(당진 FS도 PPA1·PPA2 각각 1개월로 가정). 0으로 두면 시차 없이 즉시 회수로 계산합니다.' },
+    { k: 'arLagSMP', label: 'SMP 대금 회수 시차', type: 'number', def: 1, unit: '개월', group: '매출',
+      hint: '전력거래소 정산 주기. RPS 비중이 0보다 클 때만 사용됩니다.' },
+    { k: 'arLagREC', label: 'REC 대금 회수 시차', type: 'number', def: 2, unit: '개월', group: '매출',
+      hint: 'REC는 발급·거래 절차가 더 붙어 SMP보다 통상 한 달 더 걸립니다. RPS 비중이 0보다 클 때만 사용됩니다.' },
 
     { k: 'opexEscal', label: '운영비 상승률', type: 'number', def: 0.7, unit: '%/yr', group: '운영비' },
     { k: 'decomEok', label: '철거·복구비(만기 시점)', type: 'number', def: 20, unit: '억원', group: '운영비' },
@@ -703,6 +709,25 @@
     return c;
   }
 
+  /* 판매단가 트랙 구성 — RPS(SMP+REC)/PPA 매출 이원화.
+     SMP와 REC는 대금 회수 시차가 다르므로(SMP 통상 1개월, REC는 발급·거래
+     절차가 더 붙어 2개월) 하나로 합치지 않고 **별도 트랙으로 분리**한다.
+     매출 총액은 합쳐도 나눠도 같지만(gen×share×smp + gen×share×w·rec =
+     gen×share×(smp+w·rec)), 분리해야 트랙별 회수 시차를 각각 적용할 수 있다.
+     RPS 비중이 0이면 전량 PPA라 PPA 트랙 하나만 만든다. */
+  function buildTariffTracks(c) {
+    var rps = (c.rpsShare || 0) / 100;
+    var tracks = [];
+    if (rps > 0) {
+      tracks.push({ name: 'SMP', share: rps, price: c.smpPrice, escal: c.tariffEscal, arLagMonths: c.arLagSMP });
+      tracks.push({ name: 'REC', share: rps, price: (c.recWeight || 1) * c.recPrice, escal: c.tariffEscal, arLagMonths: c.arLagREC });
+    }
+    if (rps < 1) {
+      tracks.push({ name: 'PPA', share: 1 - rps, price: c.tariff, escal: c.tariffEscal, arLagMonths: c.arLagPPA });
+    }
+    return tracks;
+  }
+
   function buildBaseInp() {
     var core = readCore();
     var tranches = readTranches();
@@ -714,12 +739,7 @@
       }),
       taxMode: 1, localSurtaxRate: 10
     });
-    if (baseInp.rpsShare > 0) {
-      baseInp.tariffTracks = [
-        { share: baseInp.rpsShare / 100, price: baseInp.smpPrice + baseInp.recWeight * baseInp.recPrice, escal: baseInp.tariffEscal },
-        { share: 1 - baseInp.rpsShare / 100, price: baseInp.tariff, escal: baseInp.tariffEscal }
-      ];
-    }
+    baseInp.tariffTracks = buildTariffTracks(baseInp);
     if (opexDetailOn) {
       baseInp.opexItems = readOpexItemsDetailed().map(function (it) {
         return { name: it.name, annualKRWm: (it.amountEok || 0) * 100, escal: it.escal, senior: it.senior };
@@ -894,7 +914,10 @@
       dsraEok: ref.funding.DSRA / 100,
       opexItems: ref.opexItems.map(function (it) { return { name: it.name, annualKRWm: it.annualKRWm, escal: it.escalRate * 100, senior: it.senior }; }),
       spendCurve: ref.spendCurve_KRWm,
-      tariffTracks: ref.tariffTracks.map(function (t) { return { share: t.share, price: t.price }; }),
+      // 당진 원본 Revenue!row18~20 "회수기일 가정" — PPA1/PPA2 각각 1개월.
+      // 프리셋은 실측 오버라이드(wc)를 쓰므로 실제 계산엔 안 쓰이지만, 값을
+      // 바꿔 프리셋이 풀렸을 때 같은 가정으로 이어지도록 넣어둔다.
+      tariffTracks: ref.tariffTracks.map(function (t) { return { share: t.share, price: t.price, arLagMonths: 1 }; }),
       seasonality: (function () { var o = {}; Object.keys(ref.seasonality).forEach(function (m) { o[Number(m)] = ref.seasonality[m]; }); return o; })(),
       equityEok: ref.funding.equity / 100, equityOrder: ref.funding.equityOrder,
       tranches: trancheDefs.map(function (d) {
@@ -940,6 +963,8 @@
     setVal('[data-k="equityEok"]', ref.funding.equity / 100);
     setVal('[data-k="tariff"]', ref.project.tariff_wavg);
     setVal('[data-k="tariffEscal"]', 0);
+    // 당진 원본 Revenue!row18~20 "회수기일 가정" = PPA1/PPA2 각각 1개월
+    setVal('[data-k="arLagPPA"]', 1);
     var totalOpex = ref.opexItems.reduce(function (a, it) { return a + it.annualKRWm; }, 0);
     setVal('[data-k="opexEok"]', (totalOpex / 100).toFixed(2));
     setVal('[data-k="opexEscal"]', 1.2); // 표시용 근사(항목별 실제 값은 프리셋 계산에 그대로 반영됨)
@@ -1120,16 +1145,7 @@
         taxMode: 1,
         localSurtaxRate: 10   // 한국 지방소득세(법인세의 10%)는 기본 적용
       });
-      // RPS(SMP+REC)/PPA 매출 이원화 — RPS 비중이 0보다 크면 두 트랙으로
-      // 나눠 엔진에 전달한다(엔진은 이미 tariffTracks를 지원). RPS 단가는
-      // 원본 Revenue!row58/63 구조와 같이 "SMP 단가 + REC가중치×REC단가"로
-      // 계산한다. 0(기존과 동일, 전량 PPA)이면 기존 단일 tariff 경로 그대로.
-      if (core.rpsShare > 0) {
-        inp.tariffTracks = [
-          { share: core.rpsShare / 100, price: core.smpPrice + core.recWeight * core.recPrice, escal: core.tariffEscal },
-          { share: 1 - core.rpsShare / 100, price: core.tariff, escal: core.tariffEscal }
-        ];
-      }
+      inp.tariffTracks = buildTariffTracks(core);
       // 운영비 항목별 입력을 켰으면 엔진이 이미 지원하는 opexItems 경로로
       // 넘겨서 계산 자체가 항목별 상승률·선순위/후순위를 반영하게 한다
       // (안 켰으면 기존처럼 총액 근사).
