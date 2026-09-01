@@ -147,6 +147,9 @@
   function defaultOpexItemsFor(pt) { return pt === 'wind' ? WIND_OPEX_ITEMS : DEFAULT_OPEX_ITEMS; }
 
   var capexDetailOn = false, opexDetailOn = false;
+  // 현재 항목 목록이 어느 발전원 기준인지 — 금액이 입력돼 있으면 발전원을 바꿔도
+  // 목록을 함부로 덮어쓰지 않기 때문에, 어긋난 상태를 사용자에게 알려줘야 한다.
+  var capexItemsPlant = 'solar', opexItemsPlant = 'solar';
   var CAPEX_ITEMS = DEFAULT_CAPEX_ITEMS.map(function (n) { return { name: n, amountEok: null }; });
   var OPEX_ITEMS = DEFAULT_OPEX_ITEMS.map(function (d) { return { name: d.name, amountEok: null, escal: d.escal, senior: d.senior }; });
 
@@ -236,28 +239,40 @@
   function isFieldVisible(d) { return !d.plant || d.plant === plantType; }
 
   /* 발전원 비교표 — 두 모델이 "무엇이 다르고 무엇이 같은지"를 한눈에.
-     선택된 발전원 열을 강조해서, 지금 어느 기준으로 계산되는지 바로 보이게 한다. */
-  var PLANT_CMP = [
+     선택된 발전원 열을 강조해서, 지금 어느 기준으로 계산되는지 바로 보이게 한다.
+     항목 목록은 실제 기본 배열에서 직접 뽑는다 — 표와 실제 항목이 어긋나지 않도록. */
+  var PLANT_CMP_TOP = [
     ['발전량 산식',
      '설비용량 × <b>일일 발전시간</b> × 365일',
      '설비용량 × 8,760h × <b>이용률</b> × <b>가동률</b>'],
     ['전용 입력칸',
      '일일 발전시간 (h/일)',
-     '이용률 (%) · 가동률 (%)'],
-    ['총사업비 기본항목',
-     'EPC · 감리비 · 공사보험료 · 토지임대료 · 사업개발비 …',
-     'WTG · 하부구조물 · 운송설치 · 해저케이블 · DEVEX …'],
-    ['운영비 기본항목',
-     'O&amp;M · 부지임대료 · 보험료 · 소내전력비 …',
-     'LTSA(WTG/BOP) · 인건비 · 보험료 · REC수수료 …']
+     '이용률 (%) · 가동률 (%)']
   ];
   var PLANT_LABEL = { solar: '태양광', wind: '풍력' };
+  var CMP_HEAD_N = 3;   // 접힌 상태에서 보여줄 항목 수
+
+  function cmpList(names, key) {
+    var esc = names.map(function (n) { return n.replace(/&/g, '&amp;').replace(/</g, '&lt;'); });
+    if (esc.length <= CMP_HEAD_N) return esc.join(' · ');
+    return '<span class="cmpHead">' + esc.slice(0, CMP_HEAD_N).join(' · ') + '</span>' +
+      '<span class="cmpRest" data-cmp-rest="' + key + '" hidden> · ' + esc.slice(CMP_HEAD_N).join(' · ') + '</span>' +
+      ' <button type="button" class="cmpMore" data-cmp-more="' + key + '">+' + (esc.length - CMP_HEAD_N) + '개</button>';
+  }
 
   function plantCmpHtml(pt) {
+    var rows = PLANT_CMP_TOP.concat([
+      ['총사업비 기본항목',
+       cmpList(DEFAULT_CAPEX_ITEMS, 'cs'),
+       cmpList(WIND_CAPEX_ITEMS, 'cw')],
+      ['운영비 기본항목',
+       cmpList(DEFAULT_OPEX_ITEMS.map(function (d) { return d.name; }), 'os'),
+       cmpList(WIND_OPEX_ITEMS.map(function (d) { return d.name; }), 'ow')]
+    ]);
     var h = '<table class="plantCmp"><tr><th></th>' +
       '<th class="' + (pt === 'solar' ? 'col-on' : '') + '">태양광</th>' +
       '<th class="' + (pt === 'wind' ? 'col-on' : '') + '">풍력</th></tr>';
-    PLANT_CMP.forEach(function (r) {
+    rows.forEach(function (r) {
       h += '<tr><td>' + r[0] + '</td>' +
         '<td class="' + (pt === 'solar' ? 'col-on' : '') + '">' + r[1] + '</td>' +
         '<td class="' + (pt === 'wind' ? 'col-on' : '') + '">' + r[2] + '</td></tr>';
@@ -265,9 +280,54 @@
     h += '<tr class="same"><td>공통 (동일)</td><td colspan="2">' +
       '자금조달 · 인출순서 · 건설이자(IDC) · 부채상환(방식 1/2/3) · 판매단가 트랙 · ' +
       '대금회수 시차 · 법인세 · 배당 · DSCR · IRR — <b>계산 로직은 두 발전원이 완전히 동일</b></td></tr>';
-    h += '</table>';
-    return h;
+    return h + '</table>';
   }
+
+  // 표는 발전원을 바꿀 때마다 다시 그려지므로, 펼치기 버튼은 위임으로 한 번만 건다.
+  function bindPlantCmp() {
+    var box = $('#plantHint'); if (!box) return;
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.cmpMore') : null;
+      if (!b) return;
+      var rest = box.querySelector('[data-cmp-rest="' + b.getAttribute('data-cmp-more') + '"]');
+      if (!rest) return;
+      var open = rest.hasAttribute('hidden');
+      if (open) { rest.removeAttribute('hidden'); b.textContent = '접기'; }
+      else { rest.setAttribute('hidden', ''); b.textContent = '+' + (rest.textContent.split('·').length - 1) + '개'; }
+    });
+  }
+  // 발전원 표준 항목으로 목록을 교체한다(금액은 비워짐). 사용자가 금액을 이미
+  // 넣어둔 경우엔 자동으로 부르지 않고, 아래 안내의 버튼을 눌렀을 때만 실행된다.
+  function applyPlantCapexItems(pt) {
+    CAPEX_ITEMS = defaultCapexItemsFor(pt).map(function (n) { return { name: n, amountEok: null }; });
+    capexItemsPlant = pt;
+    buildCapexItemGrid();
+  }
+  function applyPlantOpexItems(pt) {
+    OPEX_ITEMS = defaultOpexItemsFor(pt).map(function (d) { return { name: d.name, amountEok: null, escal: d.escal, senior: d.senior }; });
+    opexItemsPlant = pt;
+    buildOpexItemGrid();
+  }
+
+  // 지금 화면의 항목 목록이 선택한 발전원과 다르면(금액이 있어서 안 바꾼 경우)
+  // 그 사실을 알려주고 원할 때 교체할 수 있는 버튼을 붙인다.
+  function plantMismatchNote(box, itemsPlant, onApply) {
+    if (itemsPlant === plantType) return;
+    var d = el('div', 'plantWarn');
+    d.innerHTML = '지금 목록은 <b>' + PLANT_LABEL[itemsPlant] + '</b> 표준 항목입니다. ' +
+      '금액이 입력돼 있어 자동으로 바꾸지 않았습니다.';
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn ghost';
+    b.textContent = PLANT_LABEL[plantType] + ' 표준 항목으로 교체';
+    b.addEventListener('click', function () {
+      if (!w_confirm(PLANT_LABEL[plantType] + ' 표준 항목으로 교체합니다. 입력한 금액은 지워집니다. 계속할까요?')) return;
+      onApply(plantType);
+    });
+    d.appendChild(b);
+    box.appendChild(d);
+  }
+  function w_confirm(msg) { try { return window.confirm(msg); } catch (e) { return true; } }
+
   function setPlantType(pt) {
     if (pt === plantType) return;
     plantType = pt;
@@ -286,14 +346,8 @@
     if (opexDetailOn) readOpexItemsDetailed();
     var capexTouched = CAPEX_ITEMS.some(function (it) { return it.amountEok != null && it.amountEok !== ''; });
     var opexTouched = OPEX_ITEMS.some(function (it) { return it.amountEok != null && it.amountEok !== ''; });
-    if (!capexTouched) {
-      CAPEX_ITEMS = defaultCapexItemsFor(pt).map(function (n) { return { name: n, amountEok: null }; });
-      buildCapexItemGrid();
-    }
-    if (!opexTouched) {
-      OPEX_ITEMS = defaultOpexItemsFor(pt).map(function (d) { return { name: d.name, amountEok: null, escal: d.escal, senior: d.senior }; });
-      buildOpexItemGrid();
-    }
+    if (!capexTouched) applyPlantCapexItems(pt); else buildCapexItemGrid();
+    if (!opexTouched) applyPlantOpexItems(pt); else buildOpexItemGrid();
     // 4) 사업명 기본값도 발전원에 맞춰 바꿔준다(사용자가 안 고쳤을 때만)
     var pn = $('[data-k="projectName"]');
     if (pn && (pn.value === '태양광 발전사업' || pn.value === '풍력 발전사업')) {
@@ -422,6 +476,7 @@
     box.appendChild(addBtn);
     var sum = el('div', 'spendsum'); sum.id = 'capexItemSum';
     box.appendChild(sum);
+    plantMismatchNote(box, capexItemsPlant, applyPlantCapexItems);
     updateCapexItemSum();
   }
 
@@ -554,6 +609,7 @@
     box.appendChild(addBtn);
     var sum = el('div', 'spendsum'); sum.id = 'opexItemSum';
     box.appendChild(sum);
+    plantMismatchNote(box, opexItemsPlant, applyPlantOpexItems);
     updateOpexItemSum();
   }
 
@@ -1388,6 +1444,7 @@
   buildCore();
   (function () {
     var h = $('#plantHint'); if (h) h.innerHTML = plantCmpHtml(plantType);
+    bindPlantCmp();
     document.querySelectorAll('[data-plant-btn]').forEach(function (b) {
       b.addEventListener('click', function () { setPlantType(b.getAttribute('data-plant-btn')); });
     });
