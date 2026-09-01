@@ -257,7 +257,7 @@
     if (esc.length <= CMP_HEAD_N) return esc.join(' · ');
     return '<span class="cmpHead">' + esc.slice(0, CMP_HEAD_N).join(' · ') + '</span>' +
       '<span class="cmpRest" data-cmp-rest="' + key + '" hidden> · ' + esc.slice(CMP_HEAD_N).join(' · ') + '</span>' +
-      ' <button type="button" class="cmpMore" data-cmp-more="' + key + '">+' + (esc.length - CMP_HEAD_N) + '개</button>';
+      ' <button type="button" class="cmpMore" data-cmp-more="' + key + '">더보기</button>';
   }
 
   function plantCmpHtml(pt) {
@@ -293,7 +293,7 @@
       if (!rest) return;
       var open = rest.hasAttribute('hidden');
       if (open) { rest.removeAttribute('hidden'); b.textContent = '접기'; }
-      else { rest.setAttribute('hidden', ''); b.textContent = '+' + (rest.textContent.split('·').length - 1) + '개'; }
+      else { rest.setAttribute('hidden', ''); b.textContent = '더보기'; }
     });
   }
   // 발전원 표준 항목으로 목록을 교체한다(금액은 비워짐). 사용자가 금액을 이미
