@@ -6,3 +6,6 @@ __pycache__/
 !reference/*.xlsx
 e2e_*.xlsx
 e2e_kpi*.json
+contract/
+solar-fm-handoff.zip
+solar-fm-engine-contract.*
