@@ -5,53 +5,90 @@
 
 ---
 
-## 지금 상태 (한 줄 요약)
+## 지금 상태
 
-- **v1 (연 단위 · 단일 트랜치)** — 완성, 검증 완료, 배포 가능한 단일 HTML 파일
-- **v2 (분기 · 5트랜치)** — 건설기간 로직까지 원본과 소수점 일치 확인. 운영기간부터 미완성
+- **v2 (분기 · 5트랜치)** — **완성.** 건설기간·운영기간 전 구간이 원본과 대조 검증됨
+- **v1 (연 단위 · 단일 트랜치)** — 완성이지만 **구버전**. 참고/폴백용으로만 남겨둠
 
-**v2를 완성하는 것이 이 작업의 목표입니다.** v1은 참고용/폴백으로 남겨두세요.
+**앞으로의 작업은 v2(`src2/`) 기준입니다.** v1은 손대지 마세요.
+
+### v2가 실제로 검증된 범위
+
+| 항목 | 상태 |
+|---|---|
+| 건설기간 — 인출 순서, 건설이자(IDC) | 원본과 소수점 일치 |
+| 운영기간 — 매출·운영비·감가상각·이자·법인세 | 원본과 오차 0.01 KRWm 미만 |
+| 상환 스케줄 — 5트랜치 × 방식 1/2/3 | 원본과 일치 |
+| DSCR — 단순/누적/연합산 | 원본과 일치 |
+| 배당 — 연차배당 + 청산배당, 3중 캡 | 원본과 일치 |
+| IRR — Project(세전/세후)·Equity(FCFE)·배당·Investor | 오차 0.1pp 미만 |
+| 엑셀 — **입력값 시트 → 전 시트 라이브 수식 연동** | 순환참조 0, 재계산 불일치 0 |
+| 발전원 — 태양광 / 풍력 전환 | 지원 |
+
+`node test/test_ops.js` 가 13개 지표를 `reference/dangjin_reference.json` 과
+직접 대조하며, 전부 통과합니다(exit 0).
+
+> **엑셀은 값이 아니라 수식입니다.** "입력값" 시트(노란 탭)의 노란 셀만
+> 키인 값이고, 나머지 9개 시트는 전부 그 시트를 참조하는 수식입니다.
+> 엑셀에서 금리 하나를 바꾸면 IDC → 상환 → 법인세 → 배당 → IRR 까지
+> 다시 계산됩니다.
 
 ---
 
 ## 빠른 시작
 
 ```bash
-npm install                     # exceljs, jsdom
-node scripts/build.js           # src/ → dist/태양광_재무모델_생성기.html
-node scripts/sample.js          # 당진 가정으로 샘플 xlsx 생성
-node test/test_dangjin.js       # v2 엔진 ↔ 원본 대조 (건설기간)
-node test/e2e.js 1              # HTML에 key-in → 다운로드 → 워크북 캡처 (상환방식 1)
+npm install          # exceljs, jsdom
+npm run build2       # src2/ → dist/태양광_재무모델_생성기_v2.html (단일 파일)
 ```
 
-엑셀 재계산 검증은 LibreOffice가 필요합니다:
+빌드된 HTML을 브라우저로 열면 끝입니다. **인터넷 연결이 필요 없습니다** —
+ExcelJS까지 파일 안에 들어 있어 오프라인으로 동작합니다.
+
+화면에서 **"예시 불러오기 (당진1, 100MW급 PJT)"** → **"재무모델 생성"** 을
+누르면 원본 FS와 같은 숫자가 나옵니다. 예시를 안 불러오고 빈 폼으로
+생성하면 범용 근사치가 나오는 게 정상입니다.
+
+### 검증
 
 ```bash
-python recalc.py <파일.xlsx> 240   # status/total_errors/total_formulas 출력
+npm run test:ref     # 엔진 ↔ 원본 대조 (건설기간: 인출·IDC)
+npm run test:ops     # 엔진 ↔ 원본 대조 (운영기간: 13개 지표)
+npm run test:ui2     # 화면 key-in → 생성 → KPI → 엑셀 버퍼
+npm run test:e2e     # 상환방식 1/2/3 각각 UI→엑셀 E2E
 ```
 
-> `recalc.py`는 Anthropic 컨테이너의 `/mnt/skills/public/xlsx/scripts/recalc.py`에
-> 있던 스크립트입니다. 로컬에 없으면 LibreOffice UNO로 `calculateAll()` 후
-> 에러 셀을 세는 동등한 스크립트를 만들어 쓰면 됩니다.
+엑셀 워크북의 수식을 재계산해서 화면 값과 맞는지까지 보려면:
+
+```bash
+python scripts/recalc.py <파일.xlsx> 240
+```
+
+> `recalc.py` 는 LibreOffice UNO 로 `calculateAll()` 을 돌립니다.
+> **Windows 환경에서는 동작하지 않습니다**(`socket.AF_UNIX` 미지원).
+> 그 경우 엑셀 수식을 직접 파싱해 재귀·메모이제이션으로 재평가하는
+> Python 스크립트로 대체해서 검증했습니다 — 순환참조·평가오류·값대조를
+> 모두 0으로 확인. 방식은 `docs/STATUS.md` 참조.
 
 ---
 
 ## 디렉터리
 
 ```
-src/          v1 — 연 단위 · 단일 트랜치 (완성)
-  engine.js       계산엔진 (window.SolarModel)
-  xlsxbuild.js    ExcelJS 워크북 빌더 (13시트)
-  app.js          UI: 폼/KPI/SVG차트/검증/민감도/표/다운로드
-  index.html      마크업 + CSS 템플릿 (__ENGINE__ / __XLSX__ / __APP__ 치환)
+src2/         v2 — 분기 · 5트랜치  ★ 현재 작업 대상
+  engine2.js      계산엔진 (window.SolarModel2) — 브라우저 의존성 없음
+  xlsxbuild2.js   ExcelJS 워크북 빌더 (9~10시트, 라이브 수식)
+  app2.js         UI: 폼/트랜치표/지출스케줄/민감도/발전원 토글/다운로드
+  index2.html     마크업 + CSS (색상 토큰 36개는 :root 한 곳)
 
-src2/         v2 — 분기 · 5트랜치 (작업 중)
-  engine2.js      기간축 + 건설기간 완성. 운영기간 미검증
+src/          v1 — 연 단위 · 단일 트랜치 (구버전, 손대지 말 것)
 
-scripts/      build.js (단일 HTML 번들), sample.js
-test/         test_dangjin.js (원본 대조), e2e.js (UI→엑셀 E2E), uitest.js
+scripts/      build2.js (단일 HTML 번들), sample2.js, recalc.py
+test/         test_dangjin.js (건설기간 대조), test_ops.js (운영기간 대조),
+              e2e.js (UI→엑셀 E2E), uitest2*.js (UI 회귀 7종)
 reference/    dangjin_reference.json  ← 원본에서 추출한 검증 기준값 전부
-docs/         SPEC.md (원본 모델 사양), STATUS.md (완료/미완/함정)
+docs/         SPEC.md (원본 모델 사양), STATUS.md (경과/함정)
+contract/     타 시스템 인수인계 패키지 (git 추적 안 함 — .gitignore)
 ```
 
 ---
