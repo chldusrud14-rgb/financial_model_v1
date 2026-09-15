@@ -35,6 +35,33 @@
 
 ---
 
+## 바로 쓰려면 (개발 환경 없이)
+
+**`dist/태양광_재무모델_생성기_v2.html`** 을 내려받아 브라우저로 열면 끝입니다.
+설치도 인터넷 연결도 필요 없습니다(ExcelJS 까지 파일 안에 들어 있음).
+
+화면에서 **"예시 불러오기 (당진1, 100MW급 PJT)" → "재무모델 생성"** 을 누르면
+원본 FS 와 같은 숫자가 나오고, **"Excel 다운로드"** 로 수식이 살아있는
+워크북을 받을 수 있습니다.
+
+## 다른 시스템에 붙이려면
+
+**`contract/`** 폴더가 인수인계 패키지입니다. **`contract/README.md` 부터** 읽으세요.
+
+| 목적 | 볼 곳 |
+|---|---|
+| 입력/출력 데이터 스펙 | `contract/README.md` |
+| Django 연동 | `contract/DJANGO.md` |
+| Django 앱 (복사만 하면 됨) | `contract/django-app/` + `INSTALL.md` |
+| 공통 레이아웃에 삽입 (좌측 메뉴 유지) | `contract/scoped/` + `README-scoped.md` |
+| 색상·디자인 변경 | `contract/THEMING.md` |
+| 연동 후 검증용 기준값 | `contract/sample-input.json` / `sample-output.json` |
+
+계산 엔진(`contract/engine2.js`)은 **의존성이 전혀 없는 순수 JS** 라
+Node 서버에서 그대로 `require()` 해서 쓸 수 있습니다.
+
+---
+
 ## 빠른 시작
 
 ```bash

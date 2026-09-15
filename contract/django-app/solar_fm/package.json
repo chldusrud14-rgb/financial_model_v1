@@ -1,0 +1,9 @@
+{
+  "name": "solar-fm-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "재생에너지 PF 재무모델 계산 엔진 (엑셀 생성 포함)",
+  "main": "engine2.js",
+  "bin": { "solar-fm-calc": "calc.js" },
+  "dependencies": { "exceljs": "^4.4.0" }
+}

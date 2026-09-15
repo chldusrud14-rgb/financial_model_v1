@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load static %}
+
+{# 공통 레이아웃(좌측 메뉴 등) 안에 재무모델 화면을 띄운다.
+   CSS 는 #solar-fm 으로 스코프돼 있어 바깥 요소에 영향을 주지 않는다.
+   base.html 의 블록 이름이 다르면 아래 세 개를 그쪽에 맞춰 바꿀 것. #}
+
+{% block title %}재무모델{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'solar_fm/solar-fm.css' %}">
+{% endblock %}
+
+{% block content %}
+  {% include "solar_fm/_solar_fm.html" %}
+{% endblock %}
+
+{% block extra_js %}
+  {# 순서 중요: app2.js 가 앞의 것들을 참조한다. #}
+  <script src="{% static 'solar_fm/dangjin-reference.js' %}"></script>
+  <script src="{% static 'solar_fm/exceljs.min.js' %}"></script>
+  <script src="{% static 'solar_fm/engine2.js' %}"></script>
+  <script src="{% static 'solar_fm/xlsxbuild2.js' %}"></script>
+  <script src="{% static 'solar_fm/app2.js' %}"></script>
+{% endblock %}

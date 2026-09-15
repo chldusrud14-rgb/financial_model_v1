@@ -1,0 +1,13 @@
+# 엑셀/이미지는 바이너리 — 줄바꿈 변환이 일어나면 파일이 깨진다
+*.xlsx binary
+*.xlsm binary
+*.png  binary
+*.jpg  binary
+
+# 소스는 저장소에 LF 로 보관(체크아웃 시 OS 기본값을 따름)
+*.js   text
+*.py   text
+*.json text
+*.md   text
+*.css  text
+*.html text

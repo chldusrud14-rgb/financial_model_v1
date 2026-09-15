@@ -1,0 +1,73 @@
+{
+  "projectName": "샘플 태양광 100MW",
+  "ppy": 4,
+  "capacityMW": 100,
+  "dailyHours": 3.77,
+  "degradation": 0.5,
+  "auxRate": 0,
+  "tariff": 154.8,
+  "tariffEscal": 0,
+  "constructionStart": "2024-06",
+  "constructionMonths": 16,
+  "operationYears": 20,
+  "capexEok": 1410.69,
+  "opexEok": 49.8,
+  "opexEscal": 0.7,
+  "equityEok": 150,
+  "equityOrder": 1,
+  "dsraEok": 50,
+  "dsraMonths": 6,
+  "decomEok": 20,
+  "depRatio": 95,
+  "depYears": 20,
+  "minCash": 10,
+  "divDSCR": 1.1,
+  "divCumDSCR": 1.15,
+  "divStartYear": 2,
+  "discount": 5.5,
+  "lossRate": 80,
+  "taxMode": 1,
+  "taxFlat": 21,
+  "localSurtaxRate": 10,
+  "arLagMonths": 1,
+  "spendCurve": [
+    0.1,
+    0.15,
+    0.2,
+    0.25,
+    0.2,
+    0.1
+  ],
+  "shareholders": [
+    {
+      "name": "출자자1",
+      "stakePct": 60
+    },
+    {
+      "name": "출자자2",
+      "stakePct": 40
+    }
+  ],
+  "tranches": [
+    {
+      "name": "선순위A",
+      "amountEok": 800,
+      "rateC": 5.6,
+      "rateO": 5.6,
+      "order": 2,
+      "graceYears": 2,
+      "repayYears": 16,
+      "method": 1
+    },
+    {
+      "name": "선순위B",
+      "amountEok": 460.69,
+      "rateC": 5.5,
+      "rateO": 5.5,
+      "order": 2,
+      "graceYears": 2,
+      "repayYears": 16,
+      "method": 1
+    }
+  ]
+}

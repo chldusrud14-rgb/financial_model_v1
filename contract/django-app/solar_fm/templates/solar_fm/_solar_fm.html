@@ -1,0 +1,115 @@
+<div id="solar-fm">
+  <div class="top">
+    <div class="in">
+      <div><h2>재무모델 생성기 v2</h2><p>분기 · 5트랜치 · 원본(당진 FS) 대조 검증 완료 엔진</p></div>
+      <div class="pill">엔진 v2 — 계산 정확도 검증 완료</div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="warnbox">
+      상환방식은 <b>원금균등</b>과 <b>원리금균등</b> 두 가지를 직접 입력할 수 있습니다.
+      당진 FS의 <b>64회차 비율 상환</b>은 원본 스케줄이 곧 데이터라 직접 입력 대상이 아니며,
+      아래 "예시 불러오기"를 누르면 그 방식으로 자동 설정됩니다.
+    </div>
+
+    <div class="exampleBar">
+      <div class="exampleBar-text">
+        <b>입력할 값이 많아 막막하신가요?</b>
+        <span>예시값을 불러오면 아래 모든 항목(사업 기본가정·트랜치·총사업비 지출 스케줄 등)이 실제 프로젝트 값으로 채워져서 바로 결과를 볼 수 있습니다. 이후 숫자를 하나라도 고치면 그 순간부터 고친 값 기준으로 다시 계산됩니다.</span>
+      </div>
+      <button class="btn accent" id="loadDangjin">예시 불러오기 (당진1, 100MW급 PJT)</button>
+    </div>
+
+    <div class="cols">
+      <div>
+        <div class="card">
+          <div class="hd"><span class="badge">1</span><h4>사업 기본 가정</h4>
+            <div class="plantSel" style="margin-left:auto">
+              <button type="button" class="plantBtn on" data-plant-btn="solar">태양광</button>
+              <button type="button" class="plantBtn" data-plant-btn="wind">풍력</button>
+            </div>
+          </div>
+          <div class="body">
+            <div class="plantHint" id="plantHint"></div>
+            <div id="core"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><span class="badge">2</span><h4>사업자 구성 (지분)</h4>
+            <button class="btn ghost" id="shAdd" style="margin-left:auto">+ 출자자 추가</button>
+          </div>
+          <div class="hint">자본금(자본금 항목의 총액)을 여러 출자자가 나눠 낼 때 이름과 지분율을 입력합니다. 지분율 합은 100%여야 하고, 모든 출자자는 각자 지분율만큼 자본금 납입·배당 수령을 동일한 타이밍에 비례로 나눠 갖는다고 가정합니다.</div>
+          <div class="body">
+            <div id="shbox"></div>
+            <div class="spendsum" id="shsum"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><span class="badge">3</span><h4>총사업비 지출 스케줄</h4>
+            <button class="btn ghost" id="spendReset" style="margin-left:auto">균등분배로 재설정</button>
+          </div>
+          <div class="hint">공사기간(분기)마다 위 "총사업비"가 실제 얼마씩 나가는지 입력합니다. 보통 공사 초반·후반에 몰리는데, 잘 모르면 균등분배로 두면 됩니다. DSRA는 준공분기에 별도로 조달돼서 여기 포함 안 합니다.</div>
+          <div class="body">
+            <div class="spendrow" id="spendbox"></div>
+            <div class="spendsum" id="spendsum"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><span class="badge">4</span><h4>차입 트랜치 (자본금 + 선순위 A~D + 후순위)</h4>
+            <button class="btn ghost" id="trQuick" style="margin-left:auto">간편설정(선순위A 하나로)</button>
+          </div>
+          <div class="hint">보통 선순위 트랜치 1~2개만 채우고 나머지는 금액 0으로 두면 됩니다. "투입순서"가 같은 트랜치는 금액 비례로 동시에 인출됩니다. 트랜치 조건을 잘 모르면 "간편설정"으로 부채 전액을 표준 조건 하나로 묶어서 대략적인 결과부터 볼 수 있습니다.</div>
+          <div class="body">
+            <div class="trintro">
+              <b>차입 트랜치란?</b> 한 프로젝트를 하나의 대출로만 조달하지 않고, 조건(금리·상환기간·상환순위)이 서로 다른 여러 "묶음(트랜치)"으로 나눠 빌리는 게 프로젝트 파이낸싱의 일반적인 방식입니다.
+              <b>선순위(A~D)</b>는 원리금을 가장 먼저 받는(그만큼 안전해서 금리가 낮은) 대출이고, <b>후순위</b>는 선순위를 다 갚은 다음에 받는(그만큼 위험해서 금리가 높은) 대출입니다. 자본금은 대출이 아니라 사업자가 직접 출자한 돈입니다.
+            </div>
+            <div id="trbox"></div>
+            <div class="trlegend">
+              <b>투입순서</b>: 숫자가 작을수록 먼저 인출(1=가장 먼저) · <b>거치</b>: 원금 상환 없이 이자만 내는 기간(년) ·
+              <b>상환</b>: 거치 이후 원금을 갚아나가는 기간(년) · <b>방식</b>: 원금균등(매기 동일 원금) / 원리금균등(매기 동일 총상환액)
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><span class="badge">5</span><h4>민감도 분석</h4>
+            <button class="btn ghost" id="sensAdd" style="margin-left:auto">+ 시나리오 추가</button>
+          </div>
+          <div class="hint">Base는 위 "사업 기본 가정" 값을 그대로 참조하는 기준행 — <b>불러오기</b> 버튼으로 그 순간의 입력값을 채웁니다. Case는 판매단가·총사업비·운영비·금리를 직접 입력해서 Base와 비교하는 행이고, 더 필요하면 "+ 시나리오 추가"로 늘리면 됩니다.
+            <span id="adminSensHint" style="display:none"><b>"예시 불러오기"로 채운 상태에서 실행하면 실측치 고정을 자동으로 해제하고 일반 계산식 기준으로 전환해서 분석합니다.</b></span>
+          </div>
+          <div class="body">
+            <div id="sensBox"></div>
+            <button class="btn accent" id="sensRun" style="margin-top:12px;width:100%">민감도 분석 실행</button>
+            <div id="sensResults"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="rcol">
+        <button class="btn runbtn" id="run">
+          <span>재무모델 생성</span>
+          <em>← 왼쪽 입력값으로 아래에 결과가 계산됩니다</em>
+        </button>
+
+        <div class="card">
+          <div class="hd"><h4>생성 결과</h4>
+            <button class="btn ghost" id="xls" style="margin-left:auto" disabled>Excel 다운로드</button>
+          </div>
+          <div class="body">
+            <div id="kpis"></div>
+            <div class="note" id="metaNote"></div>
+            <div id="shResults"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>

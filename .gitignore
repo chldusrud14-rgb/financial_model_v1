@@ -1,11 +1,25 @@
 node_modules/
-dist/
 __pycache__/
 *.pyc
+
+# 엑셀 산출물은 기본 제외 — 검증 기준값/인수인계 샘플만 예외로 추적
 *.xlsx
 !reference/*.xlsx
+!contract/**/*.xlsx
 e2e_*.xlsx
 e2e_kpi*.json
-contract/
+
+# dist/ 는 빌드 산출물이라 기본 제외하되,
+# 동료가 repo 만 보고 바로 쓸 수 있도록 완성본 HTML 두 개는 추적한다.
+dist/*
+!dist/태양광_재무모델_생성기_v2.html
+!dist/태양광_재무모델_생성기.html
+
+# 배포 zip 은 contract/ 와 내용이 겹치고 쉽게 낡으므로 추적하지 않는다
+# (GitHub 의 "Download ZIP" 으로 repo 전체를 받으면 된다)
 solar-fm-handoff.zip
 solar-fm-engine-contract.*
+
+# 임시 검증 스크립트
+_*.js
+_*.py
