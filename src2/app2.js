@@ -89,7 +89,9 @@
     { k: 'lossRate', label: '이월결손금 공제한도', type: 'number', def: 80, unit: '%', group: '세무',
       hint: '그 해 과세소득 중 이월결손금으로 상계 가능한 비율' },
     { k: 'taxFlat', label: '단일 법인세율', type: 'number', def: 21, unit: '%', group: '세무',
-      hint: '누진세율 대신 단일세율을 쓰고 싶을 때만 참고(기본은 누진 브래킷 적용)' },
+      toggle: { id: 'taxFlatToggle', label: '단일세율 사용' },
+      hint: '기본은 한국 법인세 누진 브래킷(2억 9% / 200억 19% / 3000억 21% / 초과 24%). ' +
+            '위 "단일세율 사용"을 켜면 이 칸의 세율 하나로만 계산합니다.' },
 
     { k: 'dsraMonths', label: 'DSRA 적립기준', type: 'number', def: 6, unit: 'Month', group: '현금관리·배당',
       hint: '차기 몇 개월분 원리금을 항상 예비로 쌓아둘지' },
@@ -147,6 +149,8 @@
   function defaultOpexItemsFor(pt) { return pt === 'wind' ? WIND_OPEX_ITEMS : DEFAULT_OPEX_ITEMS; }
 
   var capexDetailOn = false, opexDetailOn = false;
+  // 단일세율 토글 — 꺼져 있으면 누진 브래킷(기본), 켜면 taxFlat 한 값만 쓴다.
+  var taxFlatOn = false;
   // 현재 항목 목록이 어느 발전원 기준인지 — 금액이 입력돼 있으면 발전원을 바꿔도
   // 목록을 함부로 덮어쓰지 않기 때문에, 어긋난 상태를 사용자에게 알려줘야 한다.
   var capexItemsPlant = 'solar', opexItemsPlant = 'solar';
@@ -1377,7 +1381,9 @@
             method: t.method
           };
         }),
-        taxMode: 1,
+        // 1 = 한국 법인세 누진 브래킷, 그 외 = taxFlat 단일세율.
+        // "단일세율 사용" 토글이 꺼져 있으면 누진이 기본이다.
+        taxMode: taxFlatOn ? 2 : 1,
         localSurtaxRate: 10   // 한국 지방소득세(법인세의 10%)는 기본 적용
       });
       inp.tariffTracks = buildTariffTracks(core);
@@ -1469,6 +1475,21 @@
   $('#capexItemBox').addEventListener('input', updateCapexItemSum);
   $('#opexDetailToggle').addEventListener('change', function (e) { toggleOpexDetail(e.target.checked); });
   $('#opexItemBox').addEventListener('input', updateOpexItemSum);
+  // 단일세율 토글 — 껐을 때 세율칸이 아무 효과 없는 채로 남아 오해를 주지 않도록
+  // 입력 가능 여부를 함께 바꾼다.
+  (function () {
+    var cb = $('#taxFlatToggle'), fld = $('[data-k="taxFlat"]');
+    function sync() {
+      taxFlatOn = !!(cb && cb.checked);
+      if (fld) {
+        fld.disabled = !taxFlatOn;
+        fld.style.opacity = taxFlatOn ? '' : '.5';
+        fld.title = taxFlatOn ? '' : '누진 브래킷 사용 중 — 이 값은 계산에 쓰이지 않습니다';
+      }
+    }
+    if (cb) cb.addEventListener('change', sync);
+    sync();
+  })();
   $('[data-k="capacityMW"]').addEventListener('input', updateOpexMWRefs);
   $('#shAdd').addEventListener('click', function () {
     SHAREHOLDERS.push({ name: '출자자' + (SHAREHOLDERS.length + 1), stakePct: 0 });

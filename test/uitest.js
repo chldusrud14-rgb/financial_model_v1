@@ -1,6 +1,6 @@
 const fs=require('fs');
 const {JSDOM}=require('jsdom');
-const html=fs.readFileSync('../dist/태양광_재무모델_생성기.html','utf8');
+const html=fs.readFileSync('dist/태양광_재무모델_생성기.html','utf8');
 const dom=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,resources:undefined});
 const w=dom.window;
 w.ExcelJS=require('exceljs');

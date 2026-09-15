@@ -9,5 +9,5 @@ m.sensBlocks=[
  {title:'차입 금리',fmtLabel:v=>v.toFixed(2)+' %',data:M.sensitivity(p,'rateO',[d(p.rateO,-0.2),d(p.rateO,-0.1),p.rateO,d(p.rateO,0.1),d(p.rateO,0.2)])},
  {title:'매출 단가',fmtLabel:v=>v.toFixed(2)+' 원/kWh',data:M.sensitivity(p,'tariff',[d(p.tariff,-0.1),d(p.tariff,-0.05),p.tariff,d(p.tariff,0.05),d(p.tariff,0.1)])}
 ];
-X.buildWorkbook(m,ExcelJS).xlsx.writeFile('../dist/당진_태양광발전_재무모델_생성예시.xlsx')
+X.buildWorkbook(m,ExcelJS).xlsx.writeFile('dist/당진_태양광발전_재무모델_생성예시.xlsx')
  .then(()=>console.log('sample written | eIRR',(m.kpi.equityIRR*100).toFixed(2),'pIRR',(m.kpi.projectIRR*100).toFixed(2),'minDSCR',m.kpi.minDSCR.toFixed(3),'sculpt',m.kpi.sculptDSCR.toFixed(3)));

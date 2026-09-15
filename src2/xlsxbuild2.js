@@ -19,6 +19,11 @@
   var BLACK = 'FF000000', WHITE = 'FFFFFFFF';
   var HDR_FILL = 'FF14483A', SUB_FILL = 'FFE8F1ED';
   var INPUT_FILL = 'FFFFF200'; // 재무모델링 관례 — 사용자가 직접 key-in한 값은 노란색으로 표시
+  /* 구조(스케줄 모양)를 정하는 입력 — 거치/상환/방식/투입순서, DSRA 적립기준처럼
+     '어느 분기에 무엇이 일어나는가'를 결정하는 값들이다. 이건 열 구성 자체를
+     다시 만들어야 해서 엑셀 안에서 고쳐도 스케줄이 따라오지 않는다.
+     노란색(=고치면 전부 다시 계산됨)과 반드시 구분해서 표시해야 오해가 없다. */
+  var STRUCT_FILL = 'FFE8E8E8';
 
   function colLetter(n) {
     var s = '';
@@ -260,11 +265,11 @@
       title(ws, '입력값 — 화면에서 입력한 값 (다른 시트가 이 시트를 참조)');
       var r = 4;
       section(ws, r, '사업 기본 가정'); r += 2;
-      function kv(name, val, fmt) {
+      function kv(name, val, fmt, fill) {
         var addr = 'C' + r;
         ws.getCell('B' + r).value = name;
         ws.getCell('B' + r).font = { name: FONT, size: 10 };
-        put(ws, addr, val, fmt, { fill: INPUT_FILL });
+        put(ws, addr, val, fmt, { fill: fill || INPUT_FILL });
         r++;
         return addr;
       }
@@ -296,7 +301,7 @@
       IN_ADDR.agentFeeKRWm = kv('대리은행수수료(총액)[KRWm]', inp.agentFeeKRWm || 0, FMT_M);
       IN_ADDR.extraTaxDeductionKRWm = kv('기타 비현금 세무손금(총액)[KRWm]', inp.extraTaxDeductionKRWm || 0, FMT_M);
       IN_ADDR.dsraEok = kv('DSRA 최초 적립액[억원]', inp.dsraEok || 0, FMT_M);
-      IN_ADDR.dsraMonths = kv('DSRA 적립기준(차기 X개월분)', inp.dsraMonths || 0, '0');
+      IN_ADDR.dsraMonths = kv('DSRA 적립기준(차기 X개월분)', inp.dsraMonths || 0, '0', STRUCT_FILL);
       IN_ADDR.minCash = kv('최소 보유현금[억원]', inp.minCash || 0, FMT_M);
       IN_ADDR.divDSCR = kv('배당 게이트 — 단순DSCR 최소치[x]', inp.divDSCR || 0, '0.0000');
       IN_ADDR.divCumDSCRVal = kv('배당 게이트 — 누적DSCR 최소치[x]', inp.divCumDSCR != null ? inp.divCumDSCR : 0, '0.0000');
@@ -380,17 +385,17 @@
         put(ws, a.amount, t.amount / 100, FMT_M, { fill: INPUT_FILL });
         put(ws, a.rateC, src.rateC != null ? src.rateC : t.rateO, FMT_P, { fill: INPUT_FILL });
         put(ws, a.rateO, t.rateO, FMT_P, { fill: INPUT_FILL });
-        put(ws, a.grace, t.graceYears, '0.00', { fill: INPUT_FILL });
-        put(ws, a.repay, t.repayYears, '0.00', { fill: INPUT_FILL });
-        put(ws, a.method, t.method, '0', { fill: INPUT_FILL });
-        put(ws, a.order, src.order != null ? src.order : '', '0', { fill: INPUT_FILL });
+        put(ws, a.grace, t.graceYears, '0.00', { fill: STRUCT_FILL });
+        put(ws, a.repay, t.repayYears, '0.00', { fill: STRUCT_FILL });
+        put(ws, a.method, t.method, '0', { fill: STRUCT_FILL });
+        put(ws, a.order, src.order != null ? src.order : '', '0', { fill: STRUCT_FILL });
         IN_ADDR.tranche.push(a);
         r++;
       });
       // 자본금도 인출 순서상 트랜치들과 같은 워터폴에 참여한다(투입순서 기준).
       put(ws, 'B' + r, '자본금', '@');
       putF(ws, 'C' + r, IN_ADDR.equityEok, FMT_M);
-      put(ws, 'I' + r, model.con.srcs[0] ? model.con.srcs[0].order : 1, '0', { fill: INPUT_FILL });
+      put(ws, 'I' + r, model.con.srcs[0] ? model.con.srcs[0].order : 1, '0', { fill: STRUCT_FILL });
       IN_ADDR.equityOrder = 'I' + r;
       IN_ADDR.equityAmountRef = 'C' + r;
       r += 2;
@@ -552,7 +557,10 @@
       }
 
       r += 1;
-      ws.getCell('B' + r).value = '※ 노란색 셀 = 화면에서 직접 key-in했거나("예시 불러오기"의 실측치 포함) 그에 준하는 입력값(재무모델링 관례). 세금·최저한세·배당가능이익 캡 등 IS(Q)/CF(Q)의 계산 결과는 반복계산·조건부 누적 로직이 얽혀 있어 여기 대상이 아니며 값(baked) 기준입니다.';
+      ws.getCell('B' + r).value = '※ 노란색 셀 = 여기서 고치면 다른 시트가 전부 따라 계산됩니다(재무모델링 관례). 이 시트 외의 모든 값은 이 시트를 참조하는 수식입니다.';
+      r += 1;
+      ws.getCell('B' + r).value = '※ 회색 셀(거치·상환·방식·투입순서, DSRA 적립기준) = 스케줄의 "모양"을 정하는 값이라 열 구성을 다시 만들어야 합니다. 엑셀에서 고쳐도 상환 스케줄은 따라오지 않으니, 이 값들을 바꾸려면 화면(HTML)에서 고친 뒤 다시 생성하세요.';
+      ws.getCell('B' + r).font = { name: FONT, size: 9, color: { argb: 'FF8A5225' } };
       ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
     })();
 
@@ -610,6 +618,7 @@
       });
       r++;
       put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M); r++;
+
 
       // 총사업비 세부내역 — 화면에서 항목별로 입력했으면 실제 금액, 합계만
       // 입력했으면 항목명만(금액은 빈칸) 표시한다. 어느 쪽이든 항목
@@ -853,13 +862,23 @@
         putF(ws, 'D' + intRow, sumFormula(intRow), FMT_M, { bold: true });
 
         label(ws, prinRow, '원금상환', '[KRWm]');
+        /* 상환 기준액은 "약정액"이 아니라 상환 개시 직전의 **실제 잔액**이다.
+           약정액을 쓰면, 실제 인출액이 약정보다 적을 때(자본금을 늘렸거나
+           트랜치를 넉넉히 잡은 경우) 인출하지도 않은 금액까지 갚아서
+           기말잔액이 음수가 된다. 엔진은 인출액 기준으로 상각하므로
+           약정액을 쓰면 엔진과도 어긋난다.
+           기초잔액[repayStartIdx] = 기말잔액[repayStartIdx-1] 이라 역방향
+           참조일 뿐 순환참조가 아니다. */
+        var amortBase = t.repayStartIdx > 0
+          ? pc(t.repayStartIdx) + openRow
+          : IN + ia.amount + '*100';
         for (var n = 0; n < N; n++) {
           if (canFormula && n >= t.repayStartIdx && n <= t.repayEndIdx) {
             if (t.method === 1) {
-              putF(ws, pc(n) + prinRow, IN + ia.amount + '*100/' + t.nRepay, FMT_M);
+              putF(ws, pc(n) + prinRow, amortBase + '/' + t.nRepay, FMT_M);
             } else {
               putF(ws, pc(n) + prinRow,
-                'PMT(' + IN + ia.rateO + '/4,' + t.nRepay + ',-' + IN + ia.amount + '*100)-' +
+                'PMT(' + IN + ia.rateO + '/4,' + t.nRepay + ',-' + amortBase + ')-' +
                 pc(n) + openRow + '*' + IN + ia.rateO + '/4', FMT_M);
             }
           } else if (canScheduleLink && n >= t.repayStartIdx && n < t.repayStartIdx + t.schedule.length) {
@@ -879,6 +898,23 @@
         label(ws, r, '미상환 잔액(검증용)', '[KRWm]');
         putF(ws, 'D' + r, lastC + closeRow, FMT_M);
         putF(ws, 'F' + r, 'IF(ABS(D' + r + ')<1,"완전상환 확인 (OK)","경고: 미상환 잔액")', '@');
+        /* 인출 시작 분기 가정 검증.
+           어느 분기에 원금을 갚기 시작하는지(= 어느 열에 상환 수식이 들어가는지)는
+           "첫 인출 분기 + 거치기간"으로 정해지고, 이건 워크북을 만들 때 확정된다.
+           그런데 입력값 시트에서 총사업비·자본금을 크게 바꾸면 자본금이 소진되는
+           시점이 달라져 첫 인출 분기가 움직인다. 그러면 상환 스케줄의 "모양"이
+           실제와 어긋나는데, 잔액은 0 으로 잘 떨어져서 위 검증에는 안 걸린다.
+           그래서 "첫 인출 분기가 가정과 같은가"를 직접 본다. */
+        if (canFormula && t.firstDrawIdx > 0) {
+          r += 1;
+          label(ws, r, '인출 시작 가정 검증', null);
+          putF(ws, 'F' + r,
+            'IF(AND(' + pc(t.firstDrawIdx - 1) + cdRow + '<1,' + pc(t.firstDrawIdx) + cdRow + '>1),' +
+            '"인출 시작 분기 일치 (OK)",' +
+            '"경고: 첫 인출 분기가 생성 당시(' + periods[t.firstDrawIdx].endStr + ')와 달라졌습니다. ' +
+            '상환 스케줄이 들어간 열은 고정이라 실제와 어긋납니다 — 화면(HTML)에서 다시 생성하세요.")', '@');
+          ws.getCell('F' + r).font = { name: FONT, size: 9, bold: true };
+        }
         if (canScheduleLink) {
           put(ws, 'H' + r, '※ 방식 3(직접 키인) — 원금상환은 "입력값" 시트의 상환비율 표를 참조하는 수식', null);
           ws.getCell('H' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
