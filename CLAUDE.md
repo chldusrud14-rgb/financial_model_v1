@@ -119,6 +119,14 @@ v1/v2 산출물 다 오프라인 동작 확인됨(`npm run test:ui`/`test:ui2`).
    테스트하려면 공식 근사 경로(opexItems/tariffTracks/seasonality 등)만
    써야 하고, 그 경우 정확도는 이보다 낮다는 걸 감안할 것.
 
+7. **엑셀 계산 수식 안에 `'입력값'!` 을 직접 섞지 말 것 — 사용자 요구사항.**
+   "기본값은 입력값에서 한 번만, 계산은 그 시트 안에서". 빌더에서는 편하게
+   `IN + IN_ADDR.x` 를 써도 마지막 `localizeInputs()` 가 시트 하단 "가정" 블록으로
+   옮겨준다. 단, 다른 시트의 **행 번호를 하드코딩하지 말 것**(예전 `'Revenue'!…12`
+   가 Revenue 재구성 때 깨질 뻔했다) — `REV_TOTAL_ROW` 같은 변수로.
+8. 입력값 시트의 트랜치 금액은 **약정액**(`model.con.srcs[ti+1].amount`)이다.
+   `model.tranches[].amount` 는 실제 인출액이라 조달이 남으면 더 작다.
+
 ## `.xlsm` 원본에서 값을 뽑을 때
 
 `python3 -c "import openpyxl; wb=openpyxl.load_workbook('reference/당진_..._final.xlsm', data_only=True); ..."`

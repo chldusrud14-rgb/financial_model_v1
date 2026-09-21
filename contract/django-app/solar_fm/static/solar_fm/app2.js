@@ -62,7 +62,9 @@
     { k: 'operationYears', label: '운영기간', type: 'number', def: 20, unit: 'Year', group: '발전소 특성' },
 
     { k: 'dsraEok', label: '최초 DSRA', type: 'number', def: 50, unit: '억원', group: '재원조달·감가상각',
-      hint: '준공 시점에 별도로 적립해두는 원리금상환 예비재원' },
+      hint: '원리금 상환이 막힐 때를 대비해 준공 시점에 따로 쌓아두는 예비재원입니다. ' +
+            '기본값은 설비용량 × 0.5억/MW(당진 FS 50억 ÷ 100MW)로 자동 계산됩니다. ' +
+            '대주단은 보통 "향후 6개월분 원리금"을 요구하므로, 차입 규모·금리가 정해지면 그 금액을 직접 입력하세요.' },
     { k: 'depRatio', label: '감가상각 대상비율', type: 'number', def: 95, unit: '%', group: '재원조달·감가상각',
       hint: '총투자비 중 감가상각 대상 자산의 비율(토지 등 제외분 빼고)' },
     { k: 'depYears', label: '감가상각 내용연수', type: 'number', def: 20, unit: 'Year', group: '재원조달·감가상각' },
@@ -84,7 +86,9 @@
       hint: 'REC는 발급·거래 절차가 더 붙어 SMP보다 통상 한 달 더 걸립니다. RPS 비중이 0보다 클 때만 사용됩니다.' },
 
     { k: 'opexEscal', label: '운영비 상승률', type: 'number', def: 0.7, unit: '%/yr', group: '운영비' },
-    { k: 'decomEok', label: '철거·복구비(만기 시점)', type: 'number', def: 20, unit: '억원', group: '운영비' },
+    { k: 'decomEok', label: '철거·복구비(만기 시점)', type: 'number', def: 20, unit: '억원', group: '운영비',
+      hint: '운영이 끝난 뒤 설비를 철거하고 부지를 원상복구하는 비용입니다(만기에 지급, 운영기간 동안 충당금으로 나눠 비용 처리). ' +
+            '기본값은 설비용량 × 0.2억/MW(당진 FS 20억 ÷ 100MW)로 자동 계산됩니다. 견적이 있으면 직접 입력하세요.' },
 
     { k: 'lossRate', label: '이월결손금 공제한도', type: 'number', def: 80, unit: '%', group: '세무',
       hint: '그 해 과세소득 중 이월결손금으로 상계 가능한 비율' },
@@ -95,7 +99,9 @@
 
     { k: 'dsraMonths', label: 'DSRA 적립기준', type: 'number', def: 6, unit: 'Month', group: '현금관리·배당',
       hint: '차기 몇 개월분 원리금을 항상 예비로 쌓아둘지' },
-    { k: 'minCash', label: '배당 후 최소보유현금', type: 'number', def: 10, unit: '억원', group: '현금관리·배당' },
+    { k: 'minCash', label: '배당 후 최소보유현금', type: 'number', def: 10, unit: '억원', group: '현금관리·배당',
+      hint: '배당을 하고 난 뒤에도 회사에 남겨둘 최소 현금입니다. ' +
+            '기본값은 설비용량 × 0.1억/MW(당진 FS 10억 ÷ 100MW)로 자동 계산됩니다.' },
     { k: 'divDSCR', label: '배당제한 — 단순DSCR', type: 'number', def: 1.1, unit: 'x', group: '현금관리·배당',
       hint: '이 값 미만이면 그 분기 원리금 상환여력이 부족하다고 보고 배당을 막음' },
     { k: 'divCumDSCR', label: '배당제한 — 누적DSCR', type: 'number', def: 1.15, unit: 'x', group: '현금관리·배당' },
@@ -1256,6 +1262,11 @@
     presetInp = buildDangjinInp(ref);
     usingPreset = true;
     suppressDirty = false;
+    // 예시 값도 참고치 — 직접 입력으로 취급하지 않는다(설비용량을 바꾸면 함께 조정).
+    if (typeof mwManual !== 'undefined') {
+      Object.keys(mwManual).forEach(function (k) { mwManual[k] = false; });
+      Object.keys(MW_RATE).forEach(mwStatus);
+    }
     updateCodDisplay();
     toast('예시값(당진1, 100MW급 PJT)을 불러왔습니다 — 바로 "생성"을 눌러보시거나, 숫자를 고쳐가며 시나리오를 만들어보세요');
   }
@@ -1491,6 +1502,60 @@
     sync();
   })();
   $('[data-k="capacityMW"]').addEventListener('input', updateOpexMWRefs);
+
+  /* 규모에 비례해야 하는 금액 — 최초 DSRA · 철거복구비 · 최소보유현금.
+     예전에는 100MW 기준 억원 금액(50/20/10)이 기본값으로 고정돼 있어서,
+     설비용량을 10MW로 바꿔도 그대로 남았다. 10MW에 DSRA 50억이 들어가면
+     그만큼 건설기간에 더 빌렸다가 준공 때 돌려주는 식이 돼서 Equity IRR이
+     16%대가 아니라 -52%로 나올 만큼 왜곡된다.
+       - 기본은 "설비용량 × MW당 단가"로 자동 계산하고 설비용량을 따라간다.
+       - 사용자가 칸에 직접 입력하면 그 값이 우선이고, 이후엔 따라가지 않는다
+         (칸을 비우면 다시 자동으로 돌아간다).
+       - "예시 불러오기"로 채운 값도 참고치일 뿐이라 자동 상태로 취급한다
+         — 설비용량을 바꾸면 함께 조정된다. (프리셋은 이벤트 없이 값을
+         넣으므로 여기서 '직접 입력'으로 잡히지 않는다.) */
+  var MW_RATE = { dsraEok: 0.5, decomEok: 0.2, minCash: 0.1 };   // 억원/MW
+  var mwManual = {};
+  function capMW() { return Number(($('[data-k="capacityMW"]') || {}).value) || 0; }
+  function mwStatus(k) {
+    var e = $('[data-k="' + k + '"]');
+    var tag = document.querySelector('[data-mw-status="' + k + '"]');
+    if (!e || !tag) return;
+    var cap = capMW(), v = Number(e.value);
+    var per = cap > 0 && e.value !== '' ? (v / cap) : null;
+    tag.textContent = (per === null ? 'MW당 —' : ('현재 MW당 ' + per.toFixed(2) + '억')) +
+      (mwManual[k] ? ' · 직접 입력값 사용 중 (칸을 비우면 자동으로 돌아갑니다)'
+                   : ' · 자동 (설비용량 × ' + MW_RATE[k] + '억/MW)');
+    tag.className = 'mwstat' + (mwManual[k] ? ' manual' : '');
+  }
+  function applyMwScaled() {
+    var cap = capMW();
+    Object.keys(MW_RATE).forEach(function (k) {
+      var e = $('[data-k="' + k + '"]');
+      if (!e) return;
+      if (!mwManual[k] && cap > 0) e.value = +(MW_RATE[k] * cap).toFixed(2);
+      mwStatus(k);
+    });
+  }
+  Object.keys(MW_RATE).forEach(function (k) {
+    var e = $('[data-k="' + k + '"]');
+    if (!e) return;
+    // 설명 아래에 "지금 MW당 얼마인지 / 자동인지 직접 입력인지"를 표시한다.
+    var box = e.closest ? e.closest('.f') : null;
+    if (box) {
+      var tag = document.createElement('div');
+      tag.setAttribute('data-mw-status', k);
+      tag.className = 'mwstat';
+      box.appendChild(tag);
+    }
+    e.addEventListener('input', function () { mwManual[k] = e.value !== ''; mwStatus(k); });
+    e.addEventListener('change', function () {
+      if (e.value === '') { mwManual[k] = false; applyMwScaled(); }
+    });
+  });
+  $('[data-k="capacityMW"]').addEventListener('input', applyMwScaled);
+  $('[data-k="capacityMW"]').addEventListener('change', applyMwScaled);
+  applyMwScaled();
   $('#shAdd').addEventListener('click', function () {
     SHAREHOLDERS.push({ name: '출자자' + (SHAREHOLDERS.length + 1), stakePct: 0 });
     buildShareholderGrid();

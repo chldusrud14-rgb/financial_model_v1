@@ -236,6 +236,8 @@ table.tr .pull:hover{background:var(--brand-l3);border-color:var(--brand-b)}
   font-size:10.5px;font-weight:700;font-family:inherit;border-radius:999px;padding:1px 7px;
   cursor:pointer;white-space:nowrap;line-height:1.5}
 .plantCmp .cmpMore:hover{background:var(--brand);color:var(--card);border-color:var(--brand)}
+.mwstat{margin-top:4px;font-size:10.5px;color:var(--muted);line-height:1.45}
+.mwstat.manual{color:var(--brand-d);font-weight:600}
 .plantWarn{margin-top:10px;padding:9px 11px;border:1px solid var(--warn-line);background:var(--warn-bg);
   border-radius:7px;font-size:11.5px;color:var(--warn-ink);line-height:1.55}
 .plantWarn b{color:var(--warn-ink)}
@@ -3591,6 +3593,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
     var CFQ_PROJFLOWPRE_ROW = null, CFQ_PROJIRRPRE_ROW = null;
+    var REV_TOTAL_ROW = null, REV_GEN_ROW = null; // Revenue 영업수익·발전량 행 — IS/CF/Report가 참조
     var AR_WC_ROW = null; // Revenue 시트의 '운전자본 증감(A/R)' 행 — CF(Q)가 참조
     // Opex 시트가 채운 항목별 행 번호와 "영업비용 합계" 행 번호 — IS(Q)가
     // 재계산하지 않고 그대로 참조하는 데 쓴다.
@@ -3723,7 +3726,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         var src = model.con.srcs[ti + 1] || {};
         put(ws, 'B' + r, t.name, '@', { fill: INPUT_FILL });
         var a = { amount: 'C' + r, rateC: 'D' + r, rateO: 'E' + r, grace: 'F' + r, repay: 'G' + r, method: 'H' + r, order: 'I' + r };
-        put(ws, a.amount, t.amount / 100, FMT_M, { fill: INPUT_FILL });
+        // 금액은 사용자가 넣은 '약정액'이어야 한다(con.srcs). model.tranches 의
+        // amount 는 실제 인출액이라, 조달이 남는 경우(자본금을 늘렸거나 트랜치를
+        // 넉넉히 잡은 경우) 약정액보다 작다. 그 값을 쓰면 입력값 시트가 사용자
+        // 입력과 다른 숫자를 보여주고, 같은 투입순서 그룹의 비례 인출 비율도
+        // 틀어져 건설이자·이자가 엔진과 어긋난다.
+        put(ws, a.amount, (src.amount != null ? src.amount : t.amount) / 100, FMT_M, { fill: INPUT_FILL });
         put(ws, a.rateC, src.rateC != null ? src.rateC : t.rateO, FMT_P, { fill: INPUT_FILL });
         put(ws, a.rateO, t.rateO, FMT_P, { fill: INPUT_FILL });
         put(ws, a.grace, t.graceYears, '0.00', { fill: STRUCT_FILL });
@@ -4327,10 +4335,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     })();
 
     /* =========================================================
-       3. Revenue — 발전량은 항상 수식화(오버라이드도 발전량 자체엔 영향
-          없음). 판매단가/영업수익은 트랙별 입력(tariffTracks)이 없고
-          해당 분기가 실측 오버라이드 대상이 아닐 때만 수식으로 연결
-          (오버라이드 분기는 그 자체가 실측 사실이라 baked 유지).
+       3. Revenue
+          읽는 순서대로 계산이 흘러가게 한다:
+            타임라인(운영연차·기간비중) → 발전량 → 트랙별 판매단가
+            → 트랙별 매출(=발전량×비중×단가) → 영업수익(=트랙 매출 합계)
+            → 가중평균 판매단가(=영업수익÷발전량)
+          예전에는 영업수익 한 칸에 입력값의 트랙 비중·단가·상승률을 전부
+          끌어다 곱했고, A/R 섹션에서 같은 트랙 매출을 입력값에서 또 한 번
+          계산했으며, 판매단가는 매출에서 역산했다. 이제 트랙 매출은 한 번만
+          만들고 영업수익과 A/R 이 그 행을 참조한다.
+          입력값 참조는 마지막에 localizeInputs() 가 시트 하단 '가정' 블록으로
+          모은다 — 여기서는 계산 구조만 신경 쓴다.
+          실측 오버라이드 분기는 그 분기의 실제 정산단가(입력값 시트)로
+          영업수익 = 발전량 × 단가 를 계산한다(값은 원본과 그대로 일치).
        ========================================================= */
     (function () {
       var ws = sheet('Revenue');
@@ -4338,63 +4355,109 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       section(ws, 4, '발전량 및 매출');
       periodHeader(ws, 6);
       var ppy = inp.ppy || 4;
-      label(ws, 9, '발전량', '[MWh]');
+      var hasTracks = !!(inp.tariffTracks && inp.tariffTracks.length);
+      var r = 8;
+      var GRAY = 'FF6B7B76';
+
+      // --- 타임라인: 수식 속에 숨어 있던 상수(^0, *0.25)를 보이는 행으로 ---
+      var yrRow = r;
+      label(ws, r, '운영연차 (첫 해 = 0)', '[yr]');
+      for (var n = 0; n < N; n++) {
+        put(ws, pc(n) + r, periods[n].opYearIdx, '0', { noSum: true });
+        ws.getCell(pc(n) + r).font = { name: FONT, size: 9, color: { argb: GRAY } };
+      }
+      r++;
+      var fracRow = r;
+      label(ws, r, '발전 기간비중 (연간 = 1)', '[배]');
       for (var n = 0; n < N; n++) {
         var p = periods[n];
-        var degF = 'MAX(0,1-' + IN + IN_ADDR.degradation + '/100*' + p.opYearIdx + ')';
-        var annualGenF = inp.dailyHours != null
-          ? IN + IN_ADDR.capacityMW + '*' + IN + IN_ADDR.dailyHours + '*365'
-          : IN + IN_ADDR.capacityMW + '*8760*(' + IN + IN_ADDR.capacityFactor + '/100)*(' + IN + IN_ADDR.availability + '/100)';
         var frac = p.opMonths / 12;
         var full = ppy === 4 && p.opMonths === (12 / ppy);
         var genFrac = (inp.seasonality && full) ? inp.seasonality[p.end.getUTCMonth() + 1] : frac;
-        putF(ws, pc(n) + 9, '(' + annualGenF + ')*' + degF + '*(1-' + IN + IN_ADDR.auxRate + '/100)*' + genFrac, '#,##0');
+        put(ws, pc(n) + r, genFrac, '0.0000', { noSum: true });
+        ws.getCell(pc(n) + r).font = { name: FONT, size: 9, color: { argb: GRAY } };
       }
-      putF(ws, 'D9', sumFormula(9), '#,##0', { bold: true });
+      r += 2;
 
-      label(ws, 10, '판매단가', '[원/kWh]');
-      label(ws, 12, '영업수익', '[KRWm]', { bold: true, fill: SUB_FILL });
-      var hasTracks = inp.tariffTracks && inp.tariffTracks.length;
+      // --- 발전량 ---
+      var genRow = r;
+      REV_GEN_ROW = genRow;
+      label(ws, r, '발전량', '[MWh]', { bold: true });
+      var annualGenF = inp.dailyHours != null
+        ? IN + IN_ADDR.capacityMW + '*' + IN + IN_ADDR.dailyHours + '*365'
+        : IN + IN_ADDR.capacityMW + '*8760*(' + IN + IN_ADDR.capacityFactor + '/100)*(' + IN + IN_ADDR.availability + '/100)';
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r,
+          '(' + annualGenF + ')*MAX(0,1-' + IN + IN_ADDR.degradation + '/100*' + pc(n) + yrRow + ')' +
+          '*(1-' + IN + IN_ADDR.auxRate + '/100)*' + pc(n) + fracRow, '#,##0', { bold: true });
+      }
+      putF(ws, 'D' + r, sumFormula(r), '#,##0', { bold: true });
+      r += 2;
+
+      // --- 트랙별 판매단가 → 트랙별 매출 ---
+      var trackPriceRow = {}, trackRevRow = {};
+      var trackName = function (ti) { return (inp.tariffTracks[ti].name) || ('트랙' + (ti + 1)); };
+      if (hasTracks) {
+        IN_ADDR.tariffTrack.forEach(function (ta, ti) {
+          trackPriceRow[ti] = r;
+          label(ws, r, trackName(ti) + ' 판매단가', '[원/kWh]', { indent: true });
+          for (var n = 0; n < N; n++) {
+            if (!periods[n].isOp) { put(ws, pc(n) + r, null, '#,##0.0'); continue; }
+            putF(ws, pc(n) + r, IN + ta.price + '*(1+' + IN + ta.escal + '/100)^' + pc(n) + yrRow, '#,##0.0');
+          }
+          r++;
+        });
+        IN_ADDR.tariffTrack.forEach(function (ta, ti) {
+          trackRevRow[ti] = r;
+          label(ws, r, trackName(ti) + ' 매출', '[KRWm]', { indent: true });
+          for (var n = 0; n < N; n++) {
+            if (!periods[n].isOp) { put(ws, pc(n) + r, 0, FMT_M); continue; }
+            // 매출 = 발전량 × 트랙 비중 × 트랙 단가 / 1000
+            putF(ws, pc(n) + r,
+              pc(n) + genRow + '*' + IN + ta.share + '/100*' + pc(n) + trackPriceRow[ti] + '/1000', FMT_M);
+          }
+          putF(ws, 'D' + r, sumFormula(r), FMT_M);
+          r++;
+        });
+        r++;
+      }
+
+      // --- 판매단가(가중평균) · 영업수익 ---
+      var priceRow = r, revRow = r + 1;
+      REV_TOTAL_ROW = revRow;
+      label(ws, priceRow, hasTracks ? '판매단가 (가중평균)' : '판매단가', '[원/kWh]');
+      label(ws, revRow, '영업수익', '[KRWm]', { bold: true, fill: SUB_FILL });
+      var firstTr = hasTracks ? trackRevRow[0] : null;
+      var lastTr = hasTracks ? trackRevRow[IN_ADDR.tariffTrack.length - 1] : null;
       var anyOverride = false;
       for (var n = 0; n < N; n++) {
         var p = periods[n];
-        var ovr = !!(ovrByEnd[p.endStr]);
+        var c = pc(n);
         if (!p.isOp) {
-          put(ws, pc(n) + 10, null, '#,##0.0');
-          put(ws, pc(n) + 12, 0, FMT_M, { bold: true });
+          put(ws, c + priceRow, null, '#,##0.0');
+          put(ws, c + revRow, 0, FMT_M, { bold: true });
           continue;
         }
-        if (ovr) {
-          // 오버라이드 분기(실측치) — "매출 숫자를 통째로 박아넣지 말고
-          // 발전량×단가로 계산되게 해달라"는 요청 반영. 실측 사실 자체는
-          // "그 분기의 실제 정산단가"이고, 그 값 자체도 다른 key-in
-          // 입력들과 마찬가지로 "입력값" 시트("실측 오버라이드" 표)에
-          // 두고 여기서는 그 셀을 참조만 한다. 매출은 다른 분기와 완전히
-          // 동일하게 발전량×단가/1000 수식으로 계산한다 — 값은 원본과
-          // 그대로 일치(단가 자체가 실측 매출/발전량이므로).
+        if (ovrByEnd[p.endStr]) {
           anyOverride = true;
-          putF(ws, pc(n) + 10, IN + pc(n) + IN_ADDR.ovr.price, '#,##0.0');
-          putF(ws, pc(n) + 12, pc(n) + '9*' + pc(n) + '10/1000', FMT_M, { bold: true });
+          putF(ws, c + priceRow, IN + c + IN_ADDR.ovr.price, '#,##0.0');
+          putF(ws, c + revRow, c + genRow + '*' + c + priceRow + '/1000', FMT_M, { bold: true });
         } else if (hasTracks) {
-          // 트랙별(SMP+REC/PPA 등) 입력 — 매출 = 발전량×Σ(트랙비중×트랙단가)/1000,
-          // 트랙단가는 각각 에스컬레이션 적용. 단가행은 그 매출의 역산치.
-          var sumTerms = IN_ADDR.tariffTrack.map(function (ta) {
-            return IN + ta.share + '/100*' + IN + ta.price + '*(1+' + IN + ta.escal + '/100)^' + p.opYearIdx;
-          }).join('+');
-          putF(ws, pc(n) + 12, pc(n) + '9*(' + sumTerms + ')/1000', FMT_M, { bold: true });
-          putF(ws, pc(n) + 10, 'IF(' + pc(n) + '9=0,0,' + pc(n) + '12*1000/' + pc(n) + '9)', '#,##0.0');
+          putF(ws, c + revRow, 'SUM(' + c + firstTr + ':' + c + lastTr + ')', FMT_M, { bold: true });
+          putF(ws, c + priceRow, 'IF(' + c + genRow + '=0,0,' + c + revRow + '*1000/' + c + genRow + ')', '#,##0.0');
         } else {
-          putF(ws, pc(n) + 10,
-            IN + IN_ADDR.tariff + '*(1+' + IN + IN_ADDR.tariffEscal + '/100)^' + p.opYearIdx, '#,##0.0');
-          putF(ws, pc(n) + 12, pc(n) + '9*' + pc(n) + '10/1000', FMT_M, { bold: true });
+          putF(ws, c + priceRow,
+            IN + IN_ADDR.tariff + '*(1+' + IN + IN_ADDR.tariffEscal + '/100)^' + c + yrRow, '#,##0.0');
+          putF(ws, c + revRow, c + genRow + '*' + c + priceRow + '/1000', FMT_M, { bold: true });
         }
       }
-      putF(ws, 'D12', sumFormula(12), FMT_M, { bold: true });
+      putF(ws, 'D' + revRow, sumFormula(revRow), FMT_M, { bold: true });
+      r = revRow + 2;
 
       if (anyOverride) {
-        var note = 14;
-        ws.getCell('B' + note).value = '※ 실측 오버라이드가 적용된 분기는 "판매단가"가 그 분기의 실제 정산단가(실측 사실, baked)이고, "영업수익"은 다른 분기와 동일하게 발전량×판매단가/1000 수식으로 계산됩니다(값은 원본과 그대로 일치).';
-        ws.getCell('B' + note).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+        ws.getCell('B' + r).value = '※ 실측 오버라이드가 적용된 분기는 "판매단가"가 그 분기의 실제 정산단가(입력값 시트의 실측 표)이고, 영업수익은 발전량 × 판매단가 / 1000 으로 계산합니다(값은 원본과 그대로 일치). 이 분기의 트랙별 매출 행은 A/R(회수 시차) 계산용 배분치입니다.';
+        ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+        r += 2;
       }
 
       /* =========================================================
@@ -4404,6 +4467,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
          보면 기말 미수금 = "마지막 lag개월치 매출"이고, 운전자본 증감은
          그 잔액의 감소분이다: wc[n] = AR[n-1] - AR[n].
          운영 마지막 분기엔 남은 미수금을 전액 회수하므로 AR = 0.
+         트랙별 매출은 위에서 이미 만든 행을 그대로 쓴다(재계산하지 않음).
          ========================================================= */
       var arLagAny = (inp.tariffTracks || []).some(function (t) { return (t.arLagMonths || 0) > 0; }) ||
         (inp.arLagMonths || 0) > 0;
@@ -4411,57 +4475,39 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         var perM = 12 / (inp.ppy || 4);
         var lastOpR = -1;
         periods.forEach(function (p, i) { if (p.isOp) lastOpR = i; });
-        var arStart = 16;
-        section(ws, arStart, '매출채권(A/R) 회수 시차'); arStart += 2;
-        var trackRevRow = {}, arBalRow = {};
-        var rr = arStart;
-        if (hasTracks) {
-          IN_ADDR.tariffTrack.forEach(function (ta, ti) {
-            var nm = (inp.tariffTracks[ti].name) || ('트랙' + (ti + 1));
-            trackRevRow[ti] = rr;
-            label(ws, rr, nm + ' 매출', '[KRWm]', { indent: true });
-            for (var n = 0; n < N; n++) {
-              if (!periods[n].isOp) { put(ws, pc(n) + rr, 0, FMT_M); continue; }
-              putF(ws, pc(n) + rr,
-                pc(n) + '9*' + IN + ta.share + '/100*' + IN + ta.price +
-                '*(1+' + IN + ta.escal + '/100)^' + periods[n].opYearIdx + '/1000', FMT_M);
-            }
-            putF(ws, 'D' + rr, sumFormula(rr), FMT_M);
-            rr++;
-          });
-        } else {
-          trackRevRow[0] = 12;   // 트랙이 없으면 총매출 행을 그대로 쓴다
-        }
+        section(ws, r, '매출채권(A/R) 회수 시차'); r += 2;
+        var arBalRow = {};
         var trackIdx = hasTracks ? IN_ADDR.tariffTrack.map(function (_, i) { return i; }) : [0];
         trackIdx.forEach(function (ti) {
-          var nm = hasTracks ? ((inp.tariffTracks[ti].name) || ('트랙' + (ti + 1))) : '전체';
-          arBalRow[ti] = rr;
-          label(ws, rr, nm + ' 기말 미수금', '[KRWm]', { indent: true });
+          var nm = hasTracks ? trackName(ti) : '전체';
+          var srcRow = hasTracks ? trackRevRow[ti] : revRow;
+          arBalRow[ti] = r;
+          label(ws, r, nm + ' 기말 미수금', '[KRWm]', { indent: true });
           var lagRef = hasTracks ? (IN + IN_ADDR.tariffTrack[ti].arLag) : String(inp.arLagMonths || 0);
           for (var n = 0; n < N; n++) {
-            if (n >= lastOpR) { put(ws, pc(n) + rr, 0, FMT_M, { noSum: true }); continue; }
+            if (n >= lastOpR) { put(ws, pc(n) + r, 0, FMT_M, { noSum: true }); continue; }
             // lag가 분기 길이를 넘을 수 있으므로 직전 분기 매출까지 함께 본다.
-            var cur = pc(n) + trackRevRow[ti];
-            var prv = n > 0 ? (pc(n - 1) + trackRevRow[ti]) : '0';
-            putF(ws, pc(n) + rr,
+            var cur = pc(n) + srcRow;
+            var prv = n > 0 ? (pc(n - 1) + srcRow) : '0';
+            putF(ws, pc(n) + r,
               'MIN(' + lagRef + ',' + perM + ')/' + perM + '*' + cur +
               '+MAX(' + lagRef + '-' + perM + ',0)/' + perM + '*' + prv, FMT_M, { noSum: true });
           }
-          rr++;
+          r++;
         });
-        AR_WC_ROW = rr;
-        label(ws, rr, '운전자본 증감(A/R)', '[KRWm]', { bold: true, fill: SUB_FILL });
+        AR_WC_ROW = r;
+        label(ws, r, '운전자본 증감(A/R)', '[KRWm]', { bold: true, fill: SUB_FILL });
         for (var n = 0; n < N; n++) {
           var terms = trackIdx.map(function (ti) {
             var prev = n > 0 ? (pc(n - 1) + arBalRow[ti]) : '0';
             return prev + '-' + pc(n) + arBalRow[ti];
           }).join('+');
-          putF(ws, pc(n) + rr, terms, FMT_M, { bold: true });
+          putF(ws, pc(n) + r, terms, FMT_M, { bold: true });
         }
-        putF(ws, 'D' + rr, sumFormula(rr), FMT_M, { bold: true });
-        rr++;
-        ws.getCell('B' + rr).value = '※ 20년 전체 합계는 0입니다(초기에 묶인 미수금을 마지막에 전액 회수). 다만 분기별로는 크게 움직여서 준공 직후 DSCR과 Equity IRR에 영향을 줍니다.';
-        ws.getCell('B' + rr).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+        putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
+        r++;
+        ws.getCell('B' + r).value = '※ 20년 전체 합계는 0입니다(초기에 묶인 미수금을 마지막에 전액 회수). 다만 분기별로는 크게 움직여서 준공 직후 DSCR과 Equity IRR에 영향을 줍니다.';
+        ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       }
     })();
 
@@ -4602,7 +4648,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       // 12행 "영업수익"이 이미 값/수식을 다 가지고 있음 — 로직 중복 방지).
       var revRowIS = r;
       label(ws, r, '영업수익', '[KRWm]', { bold: true });
-      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "'Revenue'!" + pc(n) + '12', FMT_M, { bold: true });
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, "'Revenue'!" + pc(n) + REV_TOTAL_ROW, FMT_M, { bold: true });
       putF(ws, 'D' + r, sumFormula(r), FMT_M, { bold: true });
       r += 2;
 
@@ -4908,7 +4954,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       label(ws, 9, 'CFADS (원리금상환재원)', '[KRWm]', { bold: true, fill: SUB_FILL });
       for (var n = 0; n < N; n++) {
         putF(ws, pc(n) + 9,
-          "'Revenue'!" + pc(n) + '12-\'Opex\'!' + pc(n) + OPEX_SENIOR_ROW +
+          "'Revenue'!" + pc(n) + REV_TOTAL_ROW + '-\'Opex\'!' + pc(n) + OPEX_SENIOR_ROW +
           "+'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n),
           FMT_M, { bold: true });
       }
@@ -5083,7 +5129,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       for (var n = 0; n < N; n++) {
         var divF;
         if (n === lastOpIdx2) {
-          divF = pc(n) + availRow; // 청산배당: 한도 없이 잔여현금 전액
+          // 청산배당: 한도 없이 잔여현금 전액. 단 현금이 음수면 0 —
+          // 엔진(Math.max(0, avail))과 같게. 예전엔 음수 현금이 그대로
+          // '음수 배당'으로 나가 투자자 IRR 이 망가졌다.
+          divF = 'MAX(0,' + pc(n) + availRow + ')';
         } else if (hasDivMonth) {
           // 결의월≠지급월 전제(표준 12월결의/3월지급 구조) — 지급월엔 직전
           // 분기까지 쌓인 결의액을 그대로 지급, 그 외엔 0.
@@ -5243,7 +5292,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         // projectFcf = EBITDA(=매출-영업비용합계) - 법인세 - 철거비현금(마지막
         // 운영분기만) - 대리은행수수료 + 운전자본 - 건설기간 유출.
         putF(ws, pc(n) + r,
-          "'Revenue'!" + pc(n) + "12-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
+          "'Revenue'!" + pc(n) + REV_TOTAL_ROW + "-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
           "+'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + decomCashF +
           "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + '-(' + capOutF(n) + ')',
           FMT_M);
@@ -5256,7 +5305,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         // preFlows = EBITDA - 철거비현금 - 대리은행수수료 + 운전자본 -
         // 건설기간 유출 (법인세만 세후 버전과 다름 — 안 뺀다).
         putF(ws, pc(n) + r,
-          "'Revenue'!" + pc(n) + "12-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
+          "'Revenue'!" + pc(n) + REV_TOTAL_ROW + "-'Opex'!" + pc(n) + OPEX_TOTAL_ROW +
           decomCashF2 + "+'IS(Q)'!" + pc(n) + ISQ_AGENTFEE_ROW + wcTerm(n) + '-(' + capOutF(n) + ')',
           FMT_M);
       }
@@ -5350,7 +5399,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       kvF('Investor IRR [%]', "'CF(Q)'!D" + CFQ_INVIRR_ROW, FMT_P);
       kvF('최소 단순DSCR(연 합산) [x]', "'CF(Q)'!D" + CFQ_MINDSCR_ROW, FMT_X);
       kvF('최소 누적DSCR [x]', "'CF(Q)'!D" + CFQ_MINCUMDSCR_ROW, FMT_X);
-      kvF('총영업수익(전체기간) [KRWm]', "'Revenue'!D12", FMT_M);
+      kvF('총영업수익(전체기간) [KRWm]', "'Revenue'!D" + REV_TOTAL_ROW, FMT_M);
       kvF('총영업비용(전체기간) [KRWm]', "'Opex'!D" + OPEX_TOTAL_ROW, FMT_M);
       kvF('총선순위이자 [KRWm]', "'Debt'!D" + DEBT_INT_TOTAL_ROW, FMT_M);
       kvF('총법인세 [KRWm]', "-'IS(Q)'!D" + ISQ_TAX_ROW, FMT_M);
@@ -5447,6 +5496,130 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // 아직 안 만들어진 시트를 참조해야 했던 셀들을 이제 채운다.
     DEFERRED.forEach(function (fn) { fn(); });
 
+    /* =========================================================
+       입력값 참조 정리 — "기본값은 입력값에서, 계산은 그 시트 안에서".
+       예전에는 분기 계산 수식마다 '입력값'!C7·C14·C12… 를 직접 섞어 써서,
+       예를 들어 Revenue 의 발전량 한 칸에 입력값 참조가 4~5개씩 들어갔다.
+       이제 각 계산 시트 맨 아래 "가정 (입력값 연결)" 블록에서 입력값을
+       딱 한 번씩만 끌어오고, 위의 분기 계산은 그 셀($D$n)만 참조한다.
+         - 한 값(설비용량·금리 등) → 블록의 한 칸(D열), 계산은 $D$n 절대참조
+         - 분기마다 다른 값(공사비 지출 비중·실측치 등) → 블록의 한 행,
+           계산은 같은 열의 그 행을 참조
+         - 이미 "='입력값'!C7" 처럼 입력값을 그대로 가져오기만 하는 셀은
+           그 자체가 연결 셀이므로 손대지 않는다.
+       행을 끼워 넣지 않고 맨 아래에 붙이므로 다른 시트가 참조하는 행
+       번호는 전혀 바뀌지 않는다.
+       ========================================================= */
+    (function localizeInputs() {
+      var inWs = wb.getWorksheet('입력값');
+      if (!inWs) return;
+      var TOK = /'입력값'!\$?([A-Z]{1,3})\$?(\d+)/g;
+      var RANGE = /'입력값'!\$?[A-Z]{1,3}\$?\d+:/;
+      var PURE = /^'입력값'!\$?[A-Z]{1,3}\$?\d+(\*100|\/100)?$/;
+      var LINK_COLOR = 'FF1E7B34';   // 재무모델 관례: 초록 = 다른 시트 연결
+
+      function inLabel(col, row) {
+        var b = inWs.getCell('B' + row).value;
+        var base = (b === null || b === undefined) ? ('입력값 ' + col + row) : String(b).trim();
+        // 표(트랜치·트랙·항목 등) 안의 셀이면 그 열의 머리글을 붙인다
+        // (예: 선순위A · 운영금리[%], SMP · 비중[%]). 표 머리행은 B열이
+        // 아래 이름 중 하나인 행이다 — 일반 키-값 행은 머리글이 없다.
+        var TABLE_HEADS = { '트랜치': 1, '트랙': 1, '항목': 1, '구  분': 1, '사업자': 1, '연도': 1 };
+        for (var hr = row - 1; hr >= Math.max(1, row - 20); hr--) {
+          var hb = inWs.getCell('B' + hr).value;
+          if (typeof hb === 'string' && TABLE_HEADS[hb.trim()]) {
+            var hv = inWs.getCell(col + hr).value;
+            return (typeof hv === 'string' && hv.trim()) ? (base + ' · ' + hv.trim()) : base;
+          }
+          if (typeof hb === 'string' && inWs.getCell('C' + hr).value === null &&
+              inWs.getCell('B' + hr).fill && inWs.getCell('B' + hr).fill.fgColor &&
+              inWs.getCell('B' + hr).fill.fgColor.argb === HDR_FILL) break;   // 섹션 제목을 넘어가면 중단
+        }
+        return col === 'C' ? base : (base + ' · ' + col + '열');
+      }
+
+      ['Funding', 'Debt', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'].forEach(function (sn) {
+        var ws = wb.getWorksheet(sn);
+        if (!ws) return;
+        var targets = [], lastRow = 0;
+        ws.eachRow({ includeEmpty: false }, function (row, rn) {
+          lastRow = Math.max(lastRow, rn);
+          row.eachCell({ includeEmpty: false }, function (cell) {
+            var v = cell.value;
+            if (!v || typeof v !== 'object' || typeof v.formula !== 'string') return;
+            if (v.formula.indexOf("'입력값'!") < 0) return;
+            if (PURE.test(v.formula)) return;           // 이미 순수 연결 셀
+            if (RANGE.test(v.formula)) return;          // 범위 참조는 그대로(현재 없음)
+            targets.push(cell);
+          });
+        });
+        if (!targets.length) return;
+
+        // 1) 입력값 행별로 "분기마다 다른 값인지(같은 열을 따라감)" 판정
+        var byRow = {};
+        targets.forEach(function (cell) {
+          var f = cell.value.formula, m;
+          TOK.lastIndex = 0;
+          while ((m = TOK.exec(f))) {
+            var e = byRow[m[2]] || (byRow[m[2]] = { follows: true, cols: {}, refs: {} });
+            e.refs[m[1]] = true;
+            e.cols[cell.col] = true;
+            if (colLetter(cell.col) !== m[1]) e.follows = false;
+          }
+        });
+
+        // 2) 블록 작성 — 기존 내용 아래에 붙인다
+        var r = lastRow + 3;
+        section(ws, r, '가정 (입력값 연결) — 이 시트의 계산이 쓰는 원천값');
+        ws.getCell('D' + r).value = '값';
+        ws.getCell('D' + r).font = { name: FONT, bold: true, size: 9, color: { argb: WHITE } };
+        r += 1;
+        var note = ws.getCell('B' + r);
+        note.value = '※ 입력값 시트는 여기서만 참조합니다(초록 글자 = 입력값 연결). 위의 분기 계산은 이 셀들만 참조하므로, 값을 바꾸려면 입력값 시트를 고치세요.';
+        note.font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
+        r += 1;
+
+        var scalarAddr = {}, rowAddr = {};
+        Object.keys(byRow).map(Number).sort(function (a, b) { return a - b; }).forEach(function (inRow) {
+          var e = byRow[inRow];
+          var perColumn = e.follows && Object.keys(e.cols).length > 1;
+          if (perColumn) {
+            // 분기별 행(지출 비중·실측치 등)은 행 이름만 쓴다 — 열 머리글은 날짜라 붙이지 않는다.
+            var bl = inWs.getCell('B' + inRow).value;
+            label(ws, r, (bl === null || bl === undefined) ? ('입력값 ' + inRow + '행') : String(bl).trim(), null, { indent: true });
+            ws.getCell('C' + r).value = '입력값 ' + inRow + '행';
+            ws.getCell('C' + r).font = { name: FONT, size: 8, color: { argb: 'FF9AA6A1' } };
+            Object.keys(e.cols).map(Number).forEach(function (col) {
+              var L = colLetter(col);
+              var src = inWs.getCell(L + inRow);
+              putF(ws, L + r, IN + L + inRow, src.numFmt || FMT_M, { color: LINK_COLOR });
+            });
+            rowAddr[inRow] = r;
+            r++;
+          } else {
+            Object.keys(e.refs).sort().forEach(function (L) {
+              label(ws, r, inLabel(L, inRow), null, { indent: true });
+              ws.getCell('C' + r).value = L + inRow;
+              ws.getCell('C' + r).font = { name: FONT, size: 8, color: { argb: 'FF9AA6A1' } };
+              var src = inWs.getCell(L + inRow);
+              putF(ws, 'D' + r, IN + L + inRow, src.numFmt || FMT_M, { color: LINK_COLOR });
+              scalarAddr[L + inRow] = '$D$' + r;
+              r++;
+            });
+          }
+        });
+
+        // 3) 계산 수식의 입력값 참조를 블록 셀 참조로 바꾼다
+        targets.forEach(function (cell) {
+          var f = cell.value.formula.replace(TOK, function (all, L, row) {
+            if (rowAddr[row] != null) return colLetter(cell.col) + rowAddr[row];
+            return scalarAddr[L + row] || all;
+          });
+          cell.value = { formula: f };
+        });
+      });
+    })();
+
     var order = ['목차', 'Report', '입력값', 'Funding', 'Debt', 'Revenue', 'Opex', 'IS(Q)', 'CF(Q)'].concat(
       model.sensitivity && model.sensitivity.length ? ['민감도'] : []
     );
@@ -5526,7 +5699,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     { k: 'operationYears', label: '운영기간', type: 'number', def: 20, unit: 'Year', group: '발전소 특성' },
 
     { k: 'dsraEok', label: '최초 DSRA', type: 'number', def: 50, unit: '억원', group: '재원조달·감가상각',
-      hint: '준공 시점에 별도로 적립해두는 원리금상환 예비재원' },
+      hint: '원리금 상환이 막힐 때를 대비해 준공 시점에 따로 쌓아두는 예비재원입니다. ' +
+            '기본값은 설비용량 × 0.5억/MW(당진 FS 50억 ÷ 100MW)로 자동 계산됩니다. ' +
+            '대주단은 보통 "향후 6개월분 원리금"을 요구하므로, 차입 규모·금리가 정해지면 그 금액을 직접 입력하세요.' },
     { k: 'depRatio', label: '감가상각 대상비율', type: 'number', def: 95, unit: '%', group: '재원조달·감가상각',
       hint: '총투자비 중 감가상각 대상 자산의 비율(토지 등 제외분 빼고)' },
     { k: 'depYears', label: '감가상각 내용연수', type: 'number', def: 20, unit: 'Year', group: '재원조달·감가상각' },
@@ -5548,7 +5723,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       hint: 'REC는 발급·거래 절차가 더 붙어 SMP보다 통상 한 달 더 걸립니다. RPS 비중이 0보다 클 때만 사용됩니다.' },
 
     { k: 'opexEscal', label: '운영비 상승률', type: 'number', def: 0.7, unit: '%/yr', group: '운영비' },
-    { k: 'decomEok', label: '철거·복구비(만기 시점)', type: 'number', def: 20, unit: '억원', group: '운영비' },
+    { k: 'decomEok', label: '철거·복구비(만기 시점)', type: 'number', def: 20, unit: '억원', group: '운영비',
+      hint: '운영이 끝난 뒤 설비를 철거하고 부지를 원상복구하는 비용입니다(만기에 지급, 운영기간 동안 충당금으로 나눠 비용 처리). ' +
+            '기본값은 설비용량 × 0.2억/MW(당진 FS 20억 ÷ 100MW)로 자동 계산됩니다. 견적이 있으면 직접 입력하세요.' },
 
     { k: 'lossRate', label: '이월결손금 공제한도', type: 'number', def: 80, unit: '%', group: '세무',
       hint: '그 해 과세소득 중 이월결손금으로 상계 가능한 비율' },
@@ -5559,7 +5736,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
     { k: 'dsraMonths', label: 'DSRA 적립기준', type: 'number', def: 6, unit: 'Month', group: '현금관리·배당',
       hint: '차기 몇 개월분 원리금을 항상 예비로 쌓아둘지' },
-    { k: 'minCash', label: '배당 후 최소보유현금', type: 'number', def: 10, unit: '억원', group: '현금관리·배당' },
+    { k: 'minCash', label: '배당 후 최소보유현금', type: 'number', def: 10, unit: '억원', group: '현금관리·배당',
+      hint: '배당을 하고 난 뒤에도 회사에 남겨둘 최소 현금입니다. ' +
+            '기본값은 설비용량 × 0.1억/MW(당진 FS 10억 ÷ 100MW)로 자동 계산됩니다.' },
     { k: 'divDSCR', label: '배당제한 — 단순DSCR', type: 'number', def: 1.1, unit: 'x', group: '현금관리·배당',
       hint: '이 값 미만이면 그 분기 원리금 상환여력이 부족하다고 보고 배당을 막음' },
     { k: 'divCumDSCR', label: '배당제한 — 누적DSCR', type: 'number', def: 1.15, unit: 'x', group: '현금관리·배당' },
@@ -6720,6 +6899,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     presetInp = buildDangjinInp(ref);
     usingPreset = true;
     suppressDirty = false;
+    // 예시 값도 참고치 — 직접 입력으로 취급하지 않는다(설비용량을 바꾸면 함께 조정).
+    if (typeof mwManual !== 'undefined') {
+      Object.keys(mwManual).forEach(function (k) { mwManual[k] = false; });
+      Object.keys(MW_RATE).forEach(mwStatus);
+    }
     updateCodDisplay();
     toast('예시값(당진1, 100MW급 PJT)을 불러왔습니다 — 바로 "생성"을 눌러보시거나, 숫자를 고쳐가며 시나리오를 만들어보세요');
   }
@@ -6955,6 +7139,60 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     sync();
   })();
   $('[data-k="capacityMW"]').addEventListener('input', updateOpexMWRefs);
+
+  /* 규모에 비례해야 하는 금액 — 최초 DSRA · 철거복구비 · 최소보유현금.
+     예전에는 100MW 기준 억원 금액(50/20/10)이 기본값으로 고정돼 있어서,
+     설비용량을 10MW로 바꿔도 그대로 남았다. 10MW에 DSRA 50억이 들어가면
+     그만큼 건설기간에 더 빌렸다가 준공 때 돌려주는 식이 돼서 Equity IRR이
+     16%대가 아니라 -52%로 나올 만큼 왜곡된다.
+       - 기본은 "설비용량 × MW당 단가"로 자동 계산하고 설비용량을 따라간다.
+       - 사용자가 칸에 직접 입력하면 그 값이 우선이고, 이후엔 따라가지 않는다
+         (칸을 비우면 다시 자동으로 돌아간다).
+       - "예시 불러오기"로 채운 값도 참고치일 뿐이라 자동 상태로 취급한다
+         — 설비용량을 바꾸면 함께 조정된다. (프리셋은 이벤트 없이 값을
+         넣으므로 여기서 '직접 입력'으로 잡히지 않는다.) */
+  var MW_RATE = { dsraEok: 0.5, decomEok: 0.2, minCash: 0.1 };   // 억원/MW
+  var mwManual = {};
+  function capMW() { return Number(($('[data-k="capacityMW"]') || {}).value) || 0; }
+  function mwStatus(k) {
+    var e = $('[data-k="' + k + '"]');
+    var tag = document.querySelector('[data-mw-status="' + k + '"]');
+    if (!e || !tag) return;
+    var cap = capMW(), v = Number(e.value);
+    var per = cap > 0 && e.value !== '' ? (v / cap) : null;
+    tag.textContent = (per === null ? 'MW당 —' : ('현재 MW당 ' + per.toFixed(2) + '억')) +
+      (mwManual[k] ? ' · 직접 입력값 사용 중 (칸을 비우면 자동으로 돌아갑니다)'
+                   : ' · 자동 (설비용량 × ' + MW_RATE[k] + '억/MW)');
+    tag.className = 'mwstat' + (mwManual[k] ? ' manual' : '');
+  }
+  function applyMwScaled() {
+    var cap = capMW();
+    Object.keys(MW_RATE).forEach(function (k) {
+      var e = $('[data-k="' + k + '"]');
+      if (!e) return;
+      if (!mwManual[k] && cap > 0) e.value = +(MW_RATE[k] * cap).toFixed(2);
+      mwStatus(k);
+    });
+  }
+  Object.keys(MW_RATE).forEach(function (k) {
+    var e = $('[data-k="' + k + '"]');
+    if (!e) return;
+    // 설명 아래에 "지금 MW당 얼마인지 / 자동인지 직접 입력인지"를 표시한다.
+    var box = e.closest ? e.closest('.f') : null;
+    if (box) {
+      var tag = document.createElement('div');
+      tag.setAttribute('data-mw-status', k);
+      tag.className = 'mwstat';
+      box.appendChild(tag);
+    }
+    e.addEventListener('input', function () { mwManual[k] = e.value !== ''; mwStatus(k); });
+    e.addEventListener('change', function () {
+      if (e.value === '') { mwManual[k] = false; applyMwScaled(); }
+    });
+  });
+  $('[data-k="capacityMW"]').addEventListener('input', applyMwScaled);
+  $('[data-k="capacityMW"]').addEventListener('change', applyMwScaled);
+  applyMwScaled();
   $('#shAdd').addEventListener('click', function () {
     SHAREHOLDERS.push({ name: '출자자' + (SHAREHOLDERS.length + 1), stakePct: 0 });
     buildShareholderGrid();
