@@ -250,6 +250,7 @@
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
     var CFQ_PROJFLOWPRE_ROW = null, CFQ_PROJIRRPRE_ROW = null;
+    var DEBT_CAPEX_SPEND_ROW = null; // Debt 의 '공사비 지출' 행 — CF(Q) IRR용 현금흐름이 참조
     var REV_TOTAL_ROW = null, REV_GEN_ROW = null; // Revenue 영업수익·발전량 행 — IS/CF/Report가 참조
     var AR_WC_ROW = null; // Revenue 시트의 '운전자본 증감(A/R)' 행 — CF(Q)가 참조
     // Opex 시트가 채운 항목별 행 번호와 "영업비용 합계" 행 번호 — IS(Q)가
@@ -735,9 +736,14 @@
       periodHeader(ws, r); r += 2;
 
       var capexSpendRow = r;
+      DEBT_CAPEX_SPEND_ROW = r;
       label(ws, r, '공사비 지출', '[KRWm]');
+      // 지출 비중은 건설 분기에만 있다 — 운영 분기까지 입력값의 빈 칸을
+      // 참조하면 값은 0 이어도 가정 블록에 의미 없는 연결 칸이 80개씩 생긴다.
+      var spendCols = {};
+      (model.con.conPs || []).forEach(function (cp) { spendCols[cp.n] = true; });
       for (var n = 0; n < N; n++) {
-        if (IN_ADDR.spendCurveRow != null) {
+        if (IN_ADDR.spendCurveRow != null && spendCols[n]) {
           putF(ws, pc(n) + r, IN + pc(n) + IN_ADDR.spendCurveRow + '*' + IN + IN_ADDR.capexEok + '*100', FMT_M);
         } else {
           put(ws, pc(n) + r, 0, FMT_M);
@@ -1930,10 +1936,10 @@
       // 건설기간 공사비 유출·자본금 인출 모두 이제 라이브 — Debt 시트의
       // "건설기간 자금조달" 섹션(누적인출)과 입력값 시트의 지출 스케줄을
       // 그대로 참조한다.
+      // 공사비 유출은 Debt 시트의 "공사비 지출" 행을 그대로 쓴다 — 같은 값을
+      // 입력값에서 한 번 더 계산하지 않는다(출처를 하나로).
       var capOutF = function (n) {
-        return IN_ADDR.spendCurveRow != null
-          ? (IN + pc(n) + IN_ADDR.spendCurveRow + '*' + IN + IN_ADDR.capexEok + '*100')
-          : '0';
+        return DEBT_CAPEX_SPEND_ROW ? ("'Debt'!" + pc(n) + DEBT_CAPEX_SPEND_ROW) : '0';
       };
       var equityDrawRow = r;
       label(ws, r, '자본금 인출', '[KRWm]');
