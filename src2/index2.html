@@ -238,6 +238,31 @@ table.tr .pull:hover{background:var(--brand-l3);border-color:var(--brand-b)}
 .plantCmp .cmpMore:hover{background:var(--brand);color:var(--card);border-color:var(--brand)}
 .mwstat{margin-top:4px;font-size:10.5px;color:var(--muted);line-height:1.45}
 .mwstat.manual{color:var(--brand-d);font-weight:600}
+.outBtns{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+#shareBox{margin-top:12px}
+.shareMsg{font-size:12px;color:var(--brand-d);font-weight:600;margin-bottom:6px}
+.shareUrl{width:100%;font-size:10.5px;font-family:ui-monospace,Consolas,monospace;border:1px solid var(--line);
+  border-radius:6px;padding:6px 8px;background:var(--field);color:var(--ink2);resize:vertical;word-break:break-all}
+.shareWarn{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.5}
+#printHead{display:none}
+@media print{
+  @page{size:A4;margin:10mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff}
+  #printHead{display:block;margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;break-inside:avoid}
+  #printHead .ph1{font-size:15px;font-weight:700;color:var(--ink)}
+  #printHead .ph2{font-size:10px;color:var(--muted);margin-top:2px}
+  #printHead .ph3{font-size:7.5px;color:var(--muted);margin-top:4px;word-break:break-all;line-height:1.35}
+  #printHead .plink{color:var(--brand-d);text-decoration:none}
+  .top,.exampleBar,.warnbox,.toast,#shareBox,.plantHint,.fhint,.trlegend,.hint,.mwstat{display:none!important}
+  button:not(.plantBtn),.plantBtn:not(.on),.cmpMore{display:none!important}
+  .wrap{padding:0;max-width:none}
+  .cols{display:flex!important;flex-direction:column;gap:0;margin-top:0}
+  .rcol{order:-1;position:static!important}
+  .card{box-shadow:none;margin-bottom:10px}
+  .f,tr,.kpi{break-inside:avoid}
+  details>summary{list-style:none}
+}
 .plantWarn{margin-top:10px;padding:9px 11px;border:1px solid var(--warn-line);background:var(--warn-bg);
   border-radius:7px;font-size:11.5px;color:var(--warn-ink);line-height:1.55}
 .plantWarn b{color:var(--warn-ink)}
@@ -258,6 +283,7 @@ table.tr .pull:hover{background:var(--brand-l3);border-color:var(--brand-b)}
 </div>
 
 <div class="wrap">
+  <div id="printHead"></div>
   <div class="warnbox">
     상환방식은 <b>원금균등</b>과 <b>원리금균등</b> 두 가지를 직접 입력할 수 있습니다.
     당진 FS의 <b>64회차 비율 상환</b>은 원본 스케줄이 곧 데이터라 직접 입력 대상이 아니며,
@@ -351,12 +377,17 @@ table.tr .pull:hover{background:var(--brand-l3);border-color:var(--brand-b)}
 
       <div class="card">
         <div class="hd"><h4>생성 결과</h4>
-          <button class="btn ghost" id="xls" style="margin-left:auto" disabled>Excel 다운로드</button>
+          <div class="outBtns">
+            <button class="btn ghost" id="shareLink" title="지금 입력값이 담긴 링크를 복사합니다">입력값 링크 복사</button>
+            <button class="btn ghost" id="savePdf" title="입력값과 결과를 화면 모양 그대로 PDF 로 저장합니다">PDF 저장</button>
+            <button class="btn ghost" id="xls" disabled>Excel 다운로드</button>
+          </div>
         </div>
         <div class="body">
           <div id="kpis"></div>
           <div class="note" id="metaNote"></div>
           <div id="shResults"></div>
+          <div id="shareBox"></div>
         </div>
       </div>
     </div>

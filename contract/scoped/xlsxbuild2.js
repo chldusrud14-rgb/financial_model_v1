@@ -265,6 +265,20 @@
       ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 22; ws.getColumn(3).width = 14;
       for (var c = 4; c <= 10; c++) ws.getColumn(c).width = 12;
       title(ws, '입력값 — 화면에서 입력한 값 (다른 시트가 이 시트를 참조)');
+      // 화면(HTML)을 이 입력값 그대로 다시 여는 링크. 엑셀 하이퍼링크 주소는
+      // 약 2,000자까지만 안전해서, 그보다 길면 주소를 글자로만 적어 둔다.
+      if (model.shareUrl) {
+        var lk = ws.getCell('B3');
+        if (model.shareUrl.length <= 2000) {
+          lk.value = { text: '▶ 이 입력값으로 화면(HTML) 다시 열기 — 클릭', hyperlink: model.shareUrl };
+          lk.font = { name: FONT, size: 10, bold: true, underline: true, color: { argb: 'FF1E5AA8' } };
+        } else {
+          lk.value = '화면(HTML) 다시 열기 링크 — 길이가 길어 클릭 링크로 넣지 못했습니다. 오른쪽 주소를 복사해 브라우저에 붙여넣으세요.';
+          lk.font = { name: FONT, size: 9, color: { argb: 'FF6B7B76' } };
+          ws.getCell('H3').value = model.shareUrl;
+          ws.getCell('H3').font = { name: FONT, size: 8, color: { argb: 'FF6B7B76' } };
+        }
+      }
       var r = 4;
       section(ws, r, '사업 기본 가정'); r += 2;
       function kv(name, val, fmt, fill) {
@@ -897,16 +911,14 @@
         putF(ws, 'D' + intRow, sumFormula(intRow), FMT_M, { bold: true });
 
         label(ws, prinRow, '원금상환', '[KRWm]');
-        /* 상환 기준액은 "약정액"이 아니라 상환 개시 직전의 **실제 잔액**이다.
-           약정액을 쓰면, 실제 인출액이 약정보다 적을 때(자본금을 늘렸거나
-           트랜치를 넉넉히 잡은 경우) 인출하지도 않은 금액까지 갚아서
-           기말잔액이 음수가 된다. 엔진은 인출액 기준으로 상각하므로
-           약정액을 쓰면 엔진과도 어긋난다.
-           기초잔액[repayStartIdx] = 기말잔액[repayStartIdx-1] 이라 역방향
-           참조일 뿐 순환참조가 아니다. */
-        var amortBase = t.repayStartIdx > 0
-          ? pc(t.repayStartIdx) + openRow
-          : IN + ia.amount + '*100';
+        /* 상환 기준액 = 이 트랜치의 **실제 총인출액**(위 '인출' 행 합계, D열) — 엔진의
+           t.amount(= 실제 인출 합계)와 같다.
+           · 약정액을 쓰면 인출이 약정보다 적을 때 빌리지 않은 돈까지 갚아 잔액이 음수가 된다.
+           · "상환 개시 시점의 잔액"을 쓰면, 거치기간이 짧아(0~1년) 공사 중에 상환이
+             시작되는 경우 그때까지 인출한 일부 금액만 나눠 갚게 되어 엔진과 크게 어긋난다
+             (2026-09-22 발견: 거치 0년에서 이자 합계가 엔진의 2~3배).
+           인출 행은 누적인출(자금조달 순서)에서만 나오고 상환과 무관하므로 순환참조가 없다. */
+        var amortBase = 'D' + drawRow;
         for (var n = 0; n < N; n++) {
           if (canFormula && n >= t.repayStartIdx && n <= t.repayEndIdx) {
             if (t.method === 1) {
@@ -1173,14 +1185,24 @@
           arBalRow[ti] = r;
           label(ws, r, nm + ' 기말 미수금', '[KRWm]', { indent: true });
           var lagRef = hasTracks ? (IN + IN_ADDR.tariffTrack[ti].arLag) : String(inp.arLagMonths || 0);
+          // lag 가 분기 길이를 넘으면 그 앞 분기 매출까지 걸친다(엔진 arBalanceOf 와 같음):
+          //   미수금 = Σ_j  MAX(0, MIN(lag − j·분기개월, 분기개월))/분기개월 × 매출[n−j]
+          // 예전엔 직전 분기까지만 봐서 lag 가 6개월을 넘으면 엔진과 어긋났다(12개월에서 IRR −0.1%p).
+          // 입력값 시트에서 lag 를 늘려도 맞도록 최소 12개월치(4분기)는 항상 본다.
+          var lagNow = hasTracks
+            ? Math.max.apply(null, (inp.tariffTracks || []).map(function (t) { return t.arLagMonths != null ? t.arLagMonths : (inp.arLagMonths || 0); }))
+            : (inp.arLagMonths || 0);
+          var nLook = Math.max(Math.ceil(12 / perM), Math.ceil((lagNow || 0) / perM));
           for (var n = 0; n < N; n++) {
             if (n >= lastOpR) { put(ws, pc(n) + r, 0, FMT_M, { noSum: true }); continue; }
-            // lag가 분기 길이를 넘을 수 있으므로 직전 분기 매출까지 함께 본다.
-            var cur = pc(n) + srcRow;
-            var prv = n > 0 ? (pc(n - 1) + srcRow) : '0';
-            putF(ws, pc(n) + r,
-              'MIN(' + lagRef + ',' + perM + ')/' + perM + '*' + cur +
-              '+MAX(' + lagRef + '-' + perM + ',0)/' + perM + '*' + prv, FMT_M, { noSum: true });
+            var parts = [];
+            for (var j = 0; j < nLook && n - j >= 0; j++) {
+              var share = j === 0
+                ? 'MIN(' + lagRef + ',' + perM + ')'
+                : 'MAX(0,MIN(' + lagRef + '-' + (j * perM) + ',' + perM + '))';
+              parts.push(share + '/' + perM + '*' + pc(n - j) + srcRow);
+            }
+            putF(ws, pc(n) + r, parts.join('+'), FMT_M, { noSum: true });
           }
           r++;
         });
@@ -2316,10 +2338,331 @@
       var w = wb.getWorksheet(n);
       if (w) w.orderNo = idx + 1;
     });
+
+    // ── 수식 결과값 미리 채우기 ─────────────────────────────────────────
+    // ExcelJS 는 수식만 쓰고 결과값은 비워 둔다. 그러면 엑셀이 다시 계산하지 않는 곳
+    // (다운로드 파일의 '제한된 보기', 미리보기, 모바일·메신저 뷰어)에서는 계산 셀이 전부
+    // 빈칸으로 보인다. 그래서 파일을 쓰기 전에 모든 수식을 여기서 직접 계산해 결과값을
+    // 함께 저장한다. 수식은 그대로 남고, 엑셀은 열 때 다시 계산한다(fullCalcOnLoad).
+    wb.calcProperties = wb.calcProperties || {};
+    wb.calcProperties.fullCalcOnLoad = true;
+    fillFormulaResults(wb);
     return wb;
   }
 
-  var API = { buildWorkbook: buildWorkbook, colLetter: colLetter };
+  // ── 수식 계산기(결과값 미리 채우기용) ─────────────────────────────────
+  // 이 워크북에서 쓰는 함수만 지원: IF IFERROR SUM MAX MIN AND OR NOT ABS ROUND ISBLANK IRR PMT.
+  // 새 함수를 수식에 쓰면 여기에도 추가할 것 — 없으면 결과값이 #NAME? 으로 저장된다
+  // (엑셀에서 '편집 사용' 후 재계산하면 바로잡히지만 미리보기에서는 틀려 보임).
+  // 값: 숫자 · 문자열 · 논리값 · null(빈 셀) · FxErr(#DIV/0! 같은 오류)
+  function FxErr(code) { this.err = code; }
+  var E_DIV = new FxErr('#DIV/0!'), E_VAL = new FxErr('#VALUE!'), E_NUM = new FxErr('#NUM!'),
+      E_REF = new FxErr('#REF!'), E_NAME = new FxErr('#NAME?');
+  function isErr(v) { return v instanceof FxErr; }
+  function colNum(s) { var n = 0; for (var i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64); return n; }
+  var RE_CELL = /^\$?([A-Z]{1,3})\$?(\d+)$/;
+
+  function fxTokens(src) {
+    var t = [], i = 0, m;
+    var RE_NUM = /^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/, RE_WORD = /^[A-Za-z_$][A-Za-z0-9_.$]*/;
+    while (i < src.length) {
+      var ch = src[i], rest = src.slice(i);
+      if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t') { i++; continue; }
+      if (ch === '"') {
+        var j = i + 1, s = '';
+        for (;;) {
+          if (j >= src.length) throw new Error('문자열 끝 없음');
+          if (src[j] === '"') { if (src[j + 1] === '"') { s += '"'; j += 2; continue; } break; }
+          s += src[j++];
+        }
+        t.push({ k: 'str', v: s }); i = j + 1; continue;
+      }
+      if (ch === "'") {
+        var q = i + 1, nm = '';
+        for (;;) {
+          if (q >= src.length) throw new Error('시트 이름 끝 없음');
+          if (src[q] === "'") { if (src[q + 1] === "'") { nm += "'"; q += 2; continue; } break; }
+          nm += src[q++];
+        }
+        if (src[q + 1] !== '!') throw new Error('시트 참조 형식');
+        t.push({ k: 'sheet', v: nm }); i = q + 2; continue;
+      }
+      if ((m = RE_NUM.exec(rest))) { t.push({ k: 'num', v: parseFloat(m[0]) }); i += m[0].length; continue; }
+      var two = src.substr(i, 2);
+      if (two === '<=' || two === '>=' || two === '<>') { t.push({ k: 'op', v: two }); i += 2; continue; }
+      if ('=<>+-*/^&(),:%'.indexOf(ch) >= 0) { t.push({ k: 'op', v: ch }); i++; continue; }
+      if ((m = RE_WORD.exec(rest))) {
+        if (src[i + m[0].length] === '!') { t.push({ k: 'sheet', v: m[0] }); i += m[0].length + 1; continue; }
+        t.push({ k: 'word', v: m[0] }); i += m[0].length; continue;
+      }
+      throw new Error('알 수 없는 문자 ' + ch);
+    }
+    return t;
+  }
+
+  // 수식 문자열 → 구문 트리
+  function fxParse(src) {
+    var t = fxTokens(src), p = 0;
+    function isOp(v) { var x = t[p]; return !!x && x.k === 'op' && x.v === v; }
+    function expect(v) { if (!isOp(v)) throw new Error("'" + v + "' 필요"); p++; }
+    function cmp() {
+      var a = cat();
+      while (t[p] && t[p].k === 'op' && /^(=|<>|<|>|<=|>=)$/.test(t[p].v)) { var o = t[p++].v; a = { k: 'bin', o: o, a: a, b: cat() }; }
+      return a;
+    }
+    function cat() { var a = add(); while (isOp('&')) { p++; a = { k: 'bin', o: '&', a: a, b: add() }; } return a; }
+    function add() {
+      var a = mul();
+      while (isOp('+') || isOp('-')) { var o = t[p++].v; a = { k: 'bin', o: o, a: a, b: mul() }; }
+      return a;
+    }
+    function mul() {
+      var a = pow();
+      while (isOp('*') || isOp('/')) { var o = t[p++].v; a = { k: 'bin', o: o, a: a, b: pow() }; }
+      return a;
+    }
+    function pow() { var a = unary(); while (isOp('^')) { p++; a = { k: 'bin', o: '^', a: a, b: unary() }; } return a; }
+    function unary() {   // 엑셀은 단항 부호가 ^ 보다 먼저 묶인다(-2^2 = 4)
+      if (isOp('-')) { p++; return { k: 'neg', a: unary() }; }
+      if (isOp('+')) { p++; return unary(); }
+      var a = primary();
+      if (isOp('%')) { p++; a = { k: 'bin', o: '/', a: a, b: { k: 'lit', v: 100 } }; }
+      return a;
+    }
+    function ref(sheet) {
+      var x = t[p], m = x && x.k === 'word' && RE_CELL.exec(x.v);
+      if (!m) throw new Error('셀 참조 형식 ' + (x ? x.v : '(끝)'));
+      p++;
+      var c = colNum(m[1]), r = +m[2];
+      if (isOp(':')) {
+        p++;
+        var y = t[p], m2 = y && y.k === 'word' && RE_CELL.exec(y.v);
+        if (!m2) throw new Error('범위 끝 필요');
+        p++;
+        var c2 = colNum(m2[1]), r2 = +m2[2];
+        return { k: 'rng', s: sheet, c1: Math.min(c, c2), r1: Math.min(r, r2), c2: Math.max(c, c2), r2: Math.max(r, r2) };
+      }
+      return { k: 'ref', s: sheet, c: c, r: r };
+    }
+    function primary() {
+      var x = t[p];
+      if (!x) throw new Error('수식이 끝남');
+      if (x.k === 'num' || x.k === 'str') { p++; return { k: 'lit', v: x.v }; }
+      if (x.k === 'sheet') { p++; return ref(x.v); }
+      if (x.k === 'op' && x.v === '(') { p++; var e = cmp(); expect(')'); return e; }
+      if (x.k === 'word') {
+        var nx = t[p + 1];
+        if (nx && nx.k === 'op' && nx.v === '(') {
+          p += 2; var args = [];
+          if (!isOp(')')) { for (;;) { args.push(cmp()); if (isOp(',')) { p++; continue; } break; } }
+          expect(')');
+          return { k: 'fn', n: x.v.toUpperCase(), args: args };
+        }
+        if (/^(TRUE|FALSE)$/i.test(x.v)) { p++; return { k: 'lit', v: x.v.toUpperCase() === 'TRUE' }; }
+        return ref(null);
+      }
+      throw new Error('예상 못 한 기호 ' + x.v);
+    }
+    var ast = cmp();
+    if (p !== t.length) throw new Error('수식 뒤에 남은 기호');
+    return ast;
+  }
+
+  function fillFormulaResults(wb) {
+    var sheets = {}, memo = {}, busy = {}, problems = [];
+    wb.eachSheet(function (ws) { sheets[ws.name] = ws; });
+    function key(sn, c, r) { return sn + '' + c + '' + r; }
+    function rawValue(v) {
+      if (v === null || v === undefined) return null;
+      if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') return v;
+      if (typeof v === 'object') {
+        if (v.richText) return v.richText.map(function (x) { return x.text; }).join('');
+        if (v.hyperlink !== undefined) return v.text;
+        if (v.error) return new FxErr(v.error);
+      }
+      return null;
+    }
+    function get(sn, c, r) {
+      var k = key(sn, c, r);
+      if (k in memo) return memo[k];
+      var ws = sheets[sn];
+      if (!ws) return (memo[k] = E_REF);
+      if (busy[k]) { problems.push('순환참조 ' + sn + '!' + colLetter(c) + r); return 0; }
+      var cell = ws.findCell(r, c), v = cell ? cell.value : null;
+      if (!v || typeof v !== 'object' || typeof v.formula !== 'string') return (memo[k] = rawValue(v));
+      busy[k] = true;
+      var out;
+      try {
+        var f = v.formula.charAt(0) === '=' ? v.formula.slice(1) : v.formula;
+        out = ev(fxParse(f), sn);
+        if (out && typeof out === 'object' && out.k === 'range') out = E_VAL;
+        if (out === null) out = 0;
+        if (typeof out === 'number' && !isFinite(out)) out = E_NUM;
+      } catch (e) {
+        problems.push(sn + '!' + colLetter(c) + r + ' ' + e.message);
+        out = E_NAME;
+      }
+      busy[k] = false;
+      return (memo[k] = out);
+    }
+    // 범위는 왼쪽→오른쪽, 위→아래로 읽는다(앞 분기가 먼저 계산돼 재귀가 깊어지지 않음)
+    function rangeVals(n, sn) {
+      var s = n.s || sn, out = [];
+      for (var r = n.r1; r <= n.r2; r++) for (var c = n.c1; c <= n.c2; c++) out.push(get(s, c, r));
+      return out;
+    }
+    function num(v) {
+      if (isErr(v)) return v;
+      if (v === null) return 0;
+      if (typeof v === 'number') return v;
+      if (typeof v === 'boolean') return v ? 1 : 0;
+      if (typeof v === 'string') { if (v === '') return 0; var x = Number(v); return isNaN(x) ? E_VAL : x; }
+      return E_VAL;
+    }
+    function truthy(v) {
+      if (isErr(v)) return v;
+      if (typeof v === 'string') return v === '' ? false : /^true$/i.test(v) ? true : /^false$/i.test(v) ? false : E_VAL;
+      var x = num(v); return isErr(x) ? x : x !== 0;
+    }
+    function rank(v) { return typeof v === 'number' ? 0 : typeof v === 'string' ? 1 : 2; }
+    function compare(a, b) {
+      if (a === null) a = typeof b === 'string' ? '' : typeof b === 'boolean' ? false : 0;
+      if (b === null) b = typeof a === 'string' ? '' : typeof a === 'boolean' ? false : 0;
+      var ra = rank(a), rb = rank(b);
+      if (ra !== rb) return ra < rb ? -1 : 1;
+      if (ra === 1) { a = a.toLowerCase(); b = b.toLowerCase(); }
+      if (ra === 2) { a = a ? 1 : 0; b = b ? 1 : 0; }
+      return a < b ? -1 : a > b ? 1 : 0;
+    }
+    // SUM/MAX/MIN 인자: 범위·셀 참조는 숫자만(글자·논리·빈칸 무시), 직접 쓴 값은 숫자로 바꿔 포함
+    function flatNums(args, sn) {
+      var out = [];
+      for (var i = 0; i < args.length; i++) {
+        var a = args[i], vs = a.k === 'rng' ? rangeVals(a, sn) : a.k === 'ref' ? [get(a.s || sn, a.c, a.r)] : null;
+        if (vs) {
+          for (var j = 0; j < vs.length; j++) { if (isErr(vs[j])) return vs[j]; if (typeof vs[j] === 'number') out.push(vs[j]); }
+        } else {
+          var v = num(ev(a, sn)); if (isErr(v)) return v; out.push(v);
+        }
+      }
+      return out;
+    }
+    function irr(vals, guess) {
+      var v = vals.map(function (x) { return typeof x === 'number' ? x : 0; });
+      if (!v.some(function (x) { return x > 0; }) || !v.some(function (x) { return x < 0; })) return E_NUM;
+      // 뉴턴법. 엑셀처럼 수렴하지 않으면 #NUM! (발산한 엉뚱한 값을 저장하지 않는다)
+      var rate = guess, ok = false;
+      for (var it = 0; it < 600; it++) {
+        var npv = 0, d = 0;
+        for (var i = 0; i < v.length; i++) { var q = Math.pow(1 + rate, i); npv += v[i] / q; d -= i * v[i] / (q * (1 + rate)); }
+        if (!isFinite(npv) || !isFinite(d) || d === 0) return E_NUM;
+        var nr = rate - npv / d;
+        if (nr <= -0.9999) nr = (rate - 0.9999) / 2;
+        if (Math.abs(nr - rate) < 1e-12 * Math.max(1, Math.abs(rate))) { rate = nr; ok = true; break; }
+        rate = nr;
+      }
+      return ok && isFinite(rate) && rate > -1 && rate < 1e3 ? rate : E_NUM;
+    }
+    function ev(n, sn) {
+      switch (n.k) {
+        case 'lit': return n.v;
+        case 'ref': return get(n.s || sn, n.c, n.r);
+        case 'rng': return { k: 'range' };
+        case 'neg': { var x = num(ev(n.a, sn)); return isErr(x) ? x : -x; }
+        case 'bin': {
+          var a = ev(n.a, sn), b = ev(n.b, sn);
+          if (isErr(a)) return a;
+          if (isErr(b)) return b;
+          if (n.o === '&') return String(a === null ? '' : a) + String(b === null ? '' : b);
+          if (/^(=|<>|<|>|<=|>=)$/.test(n.o)) {
+            var c = compare(a, b);
+            return n.o === '=' ? c === 0 : n.o === '<>' ? c !== 0 : n.o === '<' ? c < 0 : n.o === '>' ? c > 0 : n.o === '<=' ? c <= 0 : c >= 0;
+          }
+          a = num(a); b = num(b);
+          if (isErr(a)) return a;
+          if (isErr(b)) return b;
+          if (n.o === '+') return a + b;
+          if (n.o === '-') return a - b;
+          if (n.o === '*') return a * b;
+          if (n.o === '/') return b === 0 ? E_DIV : a / b;
+          if (n.o === '^') { var pw = Math.pow(a, b); return isFinite(pw) ? pw : E_NUM; }
+          throw new Error('연산자 ' + n.o);
+        }
+        case 'fn': return fn(n, sn);
+      }
+      throw new Error('노드 ' + n.k);
+    }
+    function fn(n, sn) {
+      var A = n.args, v, i, xs;
+      switch (n.n) {
+        case 'IF':
+          v = truthy(ev(A[0], sn)); if (isErr(v)) return v;
+          if (v) return A.length > 1 ? ev(A[1], sn) : true;
+          return A.length > 2 ? ev(A[2], sn) : false;
+        case 'IFERROR': v = ev(A[0], sn); return isErr(v) ? ev(A[1], sn) : v;
+        case 'SUM': xs = flatNums(A, sn); if (isErr(xs)) return xs; v = 0; for (i = 0; i < xs.length; i++) v += xs[i]; return v;
+        case 'MAX': xs = flatNums(A, sn); if (isErr(xs)) return xs; return xs.length ? Math.max.apply(null, xs) : 0;
+        case 'MIN': xs = flatNums(A, sn); if (isErr(xs)) return xs; return xs.length ? Math.min.apply(null, xs) : 0;
+        case 'AND': case 'OR': {
+          var all = true, any = false;
+          for (i = 0; i < A.length; i++) {
+            var list = A[i].k === 'rng'
+              ? rangeVals(A[i], sn).filter(function (x) { return x !== null && typeof x !== 'string'; })
+              : [ev(A[i], sn)];
+            for (var j = 0; j < list.length; j++) { var b = truthy(list[j]); if (isErr(b)) return b; all = all && b; any = any || b; }
+          }
+          return n.n === 'AND' ? all : any;
+        }
+        case 'NOT': v = truthy(ev(A[0], sn)); return isErr(v) ? v : !v;
+        case 'ABS': v = num(ev(A[0], sn)); return isErr(v) ? v : Math.abs(v);
+        case 'ROUND': {
+          v = num(ev(A[0], sn));
+          var d = A.length > 1 ? num(ev(A[1], sn)) : 0;
+          if (isErr(v)) return v;
+          if (isErr(d)) return d;
+          var f = Math.pow(10, Math.trunc(d)), s = v < 0 ? -1 : 1;
+          return s * Math.round(Math.abs(v) * f + 1e-9) / f;
+        }
+        case 'PMT': {   // PMT(이율, 기간수, 현재가치, [미래가치], [0=기말/1=기초])
+          var pa = [];
+          for (i = 0; i < 5; i++) { var x = i < A.length ? num(ev(A[i], sn)) : 0; if (isErr(x)) return x; pa.push(x); }
+          var rt = pa[0], np = pa[1], pv = pa[2], fv = pa[3], ty = pa[4] ? 1 : 0;
+          if (np === 0) return E_NUM;
+          if (rt === 0) return -(pv + fv) / np;
+          var g1 = Math.pow(1 + rt, np);
+          return -(pv * g1 + fv) * rt / ((g1 - 1) * (1 + rt * ty));
+        }
+        case 'ISBLANK': return A[0].k === 'ref' ? get(A[0].s || sn, A[0].c, A[0].r) === null : false;
+        case 'IRR': {
+          if (A[0].k !== 'rng') return E_VAL;
+          var g = A.length > 1 ? num(ev(A[1], sn)) : 0.1;
+          return irr(rangeVals(A[0], sn), isErr(g) ? 0.1 : g);
+        }
+      }
+      throw new Error('지원하지 않는 함수 ' + n.n);
+    }
+
+    // 열 순서(왼→오)로 먼저 계산해 재귀를 얕게 한 뒤, 결과를 각 셀에 함께 기록
+    var fcells = [];
+    wb.eachSheet(function (ws) {
+      ws.eachRow({ includeEmpty: false }, function (row, r) {
+        row.eachCell({ includeEmpty: false }, function (cell, c) {
+          var v = cell.value;
+          if (v && typeof v === 'object' && typeof v.formula === 'string') fcells.push([ws.name, c, r, cell]);
+        });
+      });
+    });
+    fcells.sort(function (x, y) { return x[1] - y[1] || x[2] - y[2]; });
+    fcells.forEach(function (x) { get(x[0], x[1], x[2]); });
+    fcells.forEach(function (x) {
+      var res = memo[key(x[0], x[1], x[2])], f = x[3].value.formula;
+      x[3].value = { formula: f, result: isErr(res) ? { error: res.err } : (res === null || res === undefined ? 0 : res) };
+    });
+    wb.__formulaProblems = problems;   // 검증용(파일에는 안 들어감)
+    return problems;
+  }
+
+  var API = { buildWorkbook: buildWorkbook, colLetter: colLetter, fillFormulaResults: fillFormulaResults };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.SolarXlsx2 = API;
 })(typeof window !== 'undefined' ? window : globalThis);

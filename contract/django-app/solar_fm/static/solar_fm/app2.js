@@ -311,12 +311,14 @@
   function applyPlantCapexItems(pt) {
     CAPEX_ITEMS = defaultCapexItemsFor(pt).map(function (n) { return { name: n, amountEok: null }; });
     capexItemsPlant = pt;
-    buildCapexItemGrid();
+    // 항목별 입력이 꺼져 있으면 목록만 바꾸고 표는 그리지 않는다 — 예전엔 발전원을
+    // 바꾸면 꺼진 상태에서도 빈 항목 표가 화면(과 인쇄)에 나타났다.
+    if (capexDetailOn) buildCapexItemGrid();
   }
   function applyPlantOpexItems(pt) {
     OPEX_ITEMS = defaultOpexItemsFor(pt).map(function (d) { return { name: d.name, amountEok: null, escal: d.escal, senior: d.senior }; });
     opexItemsPlant = pt;
-    buildOpexItemGrid();
+    if (opexDetailOn) buildOpexItemGrid();
   }
 
   // 지금 화면의 항목 목록이 선택한 발전원과 다르면(금액이 있어서 안 바꾼 경우)
@@ -356,8 +358,8 @@
     if (opexDetailOn) readOpexItemsDetailed();
     var capexTouched = CAPEX_ITEMS.some(function (it) { return it.amountEok != null && it.amountEok !== ''; });
     var opexTouched = OPEX_ITEMS.some(function (it) { return it.amountEok != null && it.amountEok !== ''; });
-    if (!capexTouched) applyPlantCapexItems(pt); else buildCapexItemGrid();
-    if (!opexTouched) applyPlantOpexItems(pt); else buildOpexItemGrid();
+    if (!capexTouched) applyPlantCapexItems(pt); else if (capexDetailOn) buildCapexItemGrid();
+    if (!opexTouched) applyPlantOpexItems(pt); else if (opexDetailOn) buildOpexItemGrid();
     // 4) 사업명 기본값도 발전원에 맞춰 바꿔준다(사용자가 안 고쳤을 때만)
     var pn = $('[data-k="projectName"]');
     if (pn && (pn.value === '태양광 발전사업' || pn.value === '풍력 발전사업')) {
@@ -1290,6 +1292,8 @@
   }
 
   var model = null;
+  var lastRunState = null;   // 마지막 생성에 쓰인 입력 상태(엑셀 '다시 열기' 링크용)
+  var cachedShare = null;    // { json, url } — 입력이 그대로면 인쇄 머리말에 쓰는 압축 링크
   var f0 = function (n) { return Math.round(n).toLocaleString('ko-KR'); };
   var pct = function (n) { return n === null || n === undefined || isNaN(n) ? '—' : (n * 100).toFixed(2); };
   var fx = function (n) { return n === null || n === undefined || isNaN(n) ? '—' : n.toFixed(2); };
@@ -1432,6 +1436,16 @@
     inp = Object.assign({}, inp, { shareholders: readShareholders() });
     try {
       model = M.computeModel(inp);
+      // 엑셀에 넣는 '다시 열기' 링크는 지금 화면이 아니라 이 결과를 만든 입력을 가리켜야 한다
+      // (생성 뒤 입력을 고치고 다운로드하는 경우). 생성 시점의 상태를 잡아 둔다.
+      try { lastRunState = snapshotState(); } catch (e) { lastRunState = null; }
+      // Ctrl+P(beforeprint)는 비동기 압축을 기다릴 수 없어서, 생성할 때 압축 링크를 미리 만들어 둔다.
+      if (lastRunState) {
+        var stJson = JSON.stringify(lastRunState);
+        Promise.resolve().then(function () { return encodeState(lastRunState); })
+          .then(function (code) { cachedShare = { json: stJson, url: shareUrlOf(code) }; })
+          .catch(function () { /* 인쇄 때 비압축 링크로 대체 */ });
+      }
       // 총사업비/운영비 세부 항목은 계산 결과가 아니라 엑셀 표시용
       // 부가정보 — 합계만 입력한 경우에도 엑셀에는 항목 이름이 나오고
       // 금액만 비워두고 싶다는 요청 반영. capexItems는 항상 붙이고
@@ -1444,7 +1458,19 @@
       }
       renderKPIs();
       $('#xls').disabled = false;
-      toast(usingPreset ? '당진 FS 실측치 기준으로 생성 완료 (원본과 검증된 값)' : '재무모델 생성 완료');
+      // 거치+상환기간이 공사기간보다 짧으면 공사 중에 상환이 끝나 버린다(이후 인출분은
+      // 갚을 회차가 없음). 계산은 되지만 현실적인 조건이 아니고 화면·엑셀 결과도
+      // 달라질 수 있으니 알려 준다.
+      var firstOp = -1;
+      model.periods.forEach(function (p, i) { if (p.isOp && firstOp < 0) firstOp = i; });
+      var earlyEnd = (model.tranches || []).filter(function (t) {
+        return t.nRepay > 0 && firstOp >= 0 && t.repayEndIdx < firstOp;
+      }).map(function (t) { return t.name; });
+      if (earlyEnd.length) {
+        toast('주의: ' + earlyEnd.join('·') + ' 상환이 준공 전에 끝납니다 — 거치·상환기간을 확인하세요 (이 조건에선 엑셀 결과가 화면과 다를 수 있음)');
+      } else {
+        toast(usingPreset ? '당진 FS 실측치 기준으로 생성 완료 (원본과 검증된 값)' : '재무모델 생성 완료');
+      }
     } catch (e) {
       toast('생성 실패: ' + e.message);
       console.error(e);
@@ -1455,7 +1481,13 @@
     if (!model) return;
     if (lastSensResults) model.sensitivity = lastSensResults;
     var btn = $('#xls'); btn.disabled = true; btn.textContent = '생성 중…';
-    X.buildWorkbook(model, window.ExcelJS).xlsx.writeBuffer().then(function (buf) {
+    var st = lastRunState || snapshotState();
+    // 링크는 부가 정보 — 만들다 실패해도(동기 예외 포함) 엑셀 다운로드는 그대로 진행한다.
+    Promise.resolve().then(function () { return encodeState(st); }).then(shareUrlOf)
+      .catch(function () { return null; }).then(function (url) {
+      model.shareUrl = url;
+      return X.buildWorkbook(model, window.ExcelJS).xlsx.writeBuffer();
+    }).then(function (buf) {
       var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -1607,4 +1639,257 @@
     if (suppressDirty || !usingPreset) return;
     if (e.target.matches('[data-k],[data-tr],[data-spend]')) { usingPreset = false; dropUnsupportedMethod3(); }
   });
+
+  /* =========================================================
+     입력값 공유 링크 · PDF 저장
+     - 화면의 입력 상태 전체(기본 필드·발전원·토글·총사업비/운영비 항목·트랜치·
+       지출 스케줄·출자자·민감도 행·MW 비례 직접입력 여부)를 JSON 으로 모아
+       압축한 뒤 링크의 '#s=' 뒤에 붙인다. '#' 뒤는 서버로 전송되지 않고
+       브라우저 안에서만 읽힌다 — 대신 링크를 가진 사람은 누구나 값을 본다.
+     - 예시(당진)를 그대로 쓰는 상태면 80분기 실측치를 담는 대신 "예시"라는
+       표시만 저장하고, 열 때 예시 불러오기를 다시 실행한다.
+     - 복원 순서가 중요하다: 총사업비 'change' 가 지출 스케줄을 기본값으로
+       다시 만들기 때문에 스케줄은 맨 마지막에 채운다.
+     ========================================================= */
+  var SHARE_VER = 1;
+
+  function snapshotState() {
+    var s = { v: SHARE_VER, plant: plantType };
+    s.sh = readShareholders().map(function (x) { return [x.name, x.stakePct]; });
+    s.sens = readSensRows().map(function (r) { return [r.name, r.tariffAbs, r.capexAbs, r.opexAbs, r.rateAbs]; });
+    if (usingPreset) { s.preset = 1; return s; }
+    var core = {};
+    document.querySelectorAll('input[data-k],select[data-k]').forEach(function (e) { core[e.dataset.k] = e.value; });
+    s.core = core;
+    s.mw = Object.keys(mwManual).filter(function (k) { return mwManual[k]; });
+    s.tf = taxFlatOn ? 1 : 0;
+    s.cx = capexDetailOn ? 1 : 0;
+    s.cxp = capexItemsPlant;
+    s.cxi = (capexDetailOn ? readCapexItems() : CAPEX_ITEMS).map(function (x) { return [x.name, x.amountEok]; });
+    s.ox = opexDetailOn ? 1 : 0;
+    s.oxp = opexItemsPlant;
+    s.oxi = (opexDetailOn ? readOpexItemsDetailed() : OPEX_ITEMS).map(function (x) {
+      return [x.name, x.amountEok, x.escal, x.senior ? 1 : 0];
+    });
+    s.tr = TRANCHES.map(function (tr) {
+      var g = function (f) { var e = $('input[data-tr="' + tr.key + '"][data-f="' + f + '"]'); return e ? e.value : ''; };
+      var sel = $('select[data-tr="' + tr.key + '"]');
+      return [tr.key, tr.name, g('amountEok'), g('order'), g('rateC'), g('rateO'), g('graceYears'), g('repayYears'), sel ? sel.value : '1'];
+    });
+    s.sp = Array.prototype.slice.call(document.querySelectorAll('[data-spend]')).map(function (e) { return e.value; });
+    return s;
+  }
+
+  function restoreState(s) {
+    if (!s || s.v !== SHARE_VER) throw new Error('지원하지 않는 링크 형식입니다');
+    if (s.preset) {
+      loadDangjin();
+    } else {
+      suppressDirty = true;
+      try {
+        if (s.plant && s.plant !== plantType) setPlantType(s.plant);
+        Object.keys(s.core || {}).forEach(function (k) {
+          var e = $('[data-k="' + k + '"]'); if (e) e.value = s.core[k];
+        });
+        var tfb = $('#taxFlatToggle');
+        if (tfb) { tfb.checked = !!s.tf; tfb.dispatchEvent(new Event('change', { bubbles: true })); }
+
+        CAPEX_ITEMS = (s.cxi || []).map(function (a) { return { name: a[0], amountEok: a[1] }; });
+        capexItemsPlant = s.cxp || plantType;
+        var cxb = $('#capexDetailToggle');
+        if (cxb) cxb.checked = !!s.cx;
+        if (s.cx) toggleCapexDetail(true);
+
+        OPEX_ITEMS = (s.oxi || []).map(function (a) { return { name: a[0], amountEok: a[1], escal: a[2], senior: !!a[3] }; });
+        opexItemsPlant = s.oxp || plantType;
+        var oxb = $('#opexDetailToggle');
+        if (oxb) oxb.checked = !!s.ox;
+        if (s.ox) toggleOpexDetail(true);
+
+        TRANCHES = (s.tr || []).map(function (a) {
+          return { key: a[0], name: a[1], amountEok: Number(a[2]), order: Number(a[3]), rateC: Number(a[4]),
+            rateO: Number(a[5]), graceYears: Number(a[6]), repayYears: Number(a[7]), method: Number(a[8]) };
+        });
+        buildTrancheGrid();
+        (s.tr || []).forEach(function (a) {
+          ['amountEok', 'order', 'rateC', 'rateO', 'graceYears', 'repayYears'].forEach(function (f, i) {
+            var e = $('input[data-tr="' + a[0] + '"][data-f="' + f + '"]'); if (e) e.value = a[2 + i];
+          });
+          var sel = $('select[data-tr="' + a[0] + '"]'); if (sel) sel.value = a[8];
+        });
+
+        // 지출 스케줄은 맨 마지막 — 공사기간에 맞는 칸 수로 다시 만든 뒤 값을 채운다.
+        buildSpendCurve();
+        (s.sp || []).forEach(function (v, i) { var e = $('[data-spend="' + i + '"]'); if (e) e.value = v; });
+        updateSpendSum();
+
+        Object.keys(mwManual).forEach(function (k) { mwManual[k] = false; });
+        (s.mw || []).forEach(function (k) { mwManual[k] = true; });
+        Object.keys(MW_RATE).forEach(mwStatus);
+        updateCodDisplay();
+        updateOpexMWRefs();
+      } finally {
+        suppressDirty = false;
+      }
+    }
+    SHAREHOLDERS = (s.sh || []).map(function (a) { return { name: a[0], stakePct: Number(a[1]) }; });
+    buildShareholderGrid();
+    SENS_ROWS = (s.sens || []).map(function (a) {
+      return { name: a[0], tariffAbs: a[1], capexAbs: a[2], opexAbs: a[3], rateAbs: a[4] };
+    });
+    buildSensGrid();
+  }
+
+  // UTF-8 변환 — TextEncoder 가 없는 환경(구형 브라우저·테스트 환경)에서도 동작하게.
+  function utf8Bytes(str) {
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(str);
+    var bin = unescape(encodeURIComponent(str)), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u;
+  }
+  function utf8Str(bytes) {
+    if (typeof TextDecoder === 'function') return new TextDecoder().decode(bytes);
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return decodeURIComponent(escape(bin));
+  }
+  function b64url(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function unb64url(str) {
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    var bin = atob(str), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u;
+  }
+  // 'z' = 압축(deflate), 'j' = 압축 없음(압축을 못 하는 환경용). 여는 쪽은 둘 다 읽는다.
+  function encodeState(s) {
+    var bytes = utf8Bytes(JSON.stringify(s));
+    if (typeof CompressionStream === 'function' && typeof Response === 'function') {
+      try {
+        return new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate')))
+          .arrayBuffer().then(function (buf) { return 'z' + b64url(new Uint8Array(buf)); })
+          .catch(function () { return 'j' + b64url(bytes); });
+      } catch (e) { /* 아래 비압축으로 */ }
+    }
+    return Promise.resolve('j' + b64url(bytes));
+  }
+  function decodeState(code) {
+    var kind = code.charAt(0), bytes;
+    try { bytes = unb64url(code.slice(1)); } catch (e) { return Promise.reject(new Error('링크가 잘렸거나 손상됐습니다')); }
+    if (kind === 'j') { try { return Promise.resolve(JSON.parse(utf8Str(bytes))); } catch (e) { return Promise.reject(new Error('링크가 손상됐습니다')); } }
+    if (kind === 'z') {
+      if (typeof DecompressionStream !== 'function') {
+        return Promise.reject(new Error('이 브라우저는 압축된 링크를 열 수 없습니다(Chrome·Edge 최신 버전 권장)'));
+      }
+      return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).text()
+        .then(function (t) { return JSON.parse(t); });
+    }
+    return Promise.reject(new Error('알 수 없는 링크 형식입니다'));
+  }
+  // 공유 링크의 바탕 주소 — 이전 PDF 링크로 열었을 때 붙은 '?r=…' 같은 쿼리는 떼고 쓴다.
+  function shareBase() { return location.href.split('#')[0].split('?')[0]; }
+  function shareUrlOf(code) { return shareBase() + '#s=' + code; }
+  function currentShareUrl() { return encodeState(snapshotState()).then(shareUrlOf); }
+
+  function showShareBox(url, copied) {
+    var box = $('#shareBox'); if (!box) return;
+    box.innerHTML = '';
+    var p = el('div', 'shareMsg', copied
+      ? '입력값이 담긴 링크를 복사했습니다. 이 링크를 열면 지금 입력 상태가 그대로 복원됩니다.'
+      : '아래 링크를 복사해 두세요. 이 링크를 열면 지금 입력 상태가 그대로 복원됩니다.');
+    var ta = document.createElement('textarea');
+    ta.readOnly = true; ta.value = url; ta.rows = 3; ta.className = 'shareUrl';
+    ta.addEventListener('focus', function () { ta.select(); });
+    var warn = el('div', 'shareWarn', '※ 링크를 가진 사람은 누구나 입력값을 볼 수 있습니다. 값은 링크 안에만 있고 서버에 저장되지 않습니다.');
+    box.appendChild(p); box.appendChild(ta); box.appendChild(warn);
+  }
+  function copyShareLink() {
+    currentShareUrl().then(function (url) {
+      try { history.replaceState(null, '', '#s=' + url.split('#s=')[1]); } catch (e) { /* file:// 등 */ }
+      var ok = function () { showShareBox(url, true); toast('입력값 링크를 복사했습니다'); };
+      var fail = function () { showShareBox(url, false); toast('자동 복사가 막혀 있어 아래 링크를 직접 복사해 주세요'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(ok, fail);
+      else fail();
+    }).catch(function (e) { toast('링크를 만들지 못했습니다: ' + e.message); });
+  }
+
+  // 인쇄(PDF) 머리말 — 사업명·작성일시·"이 입력으로 다시 열기" 링크.
+  function fillPrintHead(url) {
+    var name = (($('[data-k="projectName"]') || {}).value || '재무모델').trim();
+    var now = new Date();
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var stamp = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+    var head = $('#printHead'); if (!head) return stamp;
+    head.innerHTML = '';
+    head.appendChild(el('div', 'ph1', name + ' — 입력값 · 결과 기록'));
+    head.appendChild(el('div', 'ph2', '작성 ' + stamp + ' · ' + PLANT_LABEL[plantType] + (usingPreset ? ' · 당진 FS 예시값' : '') +
+      (model ? '' : ' · 결과 없음(생성 전)')));
+    // 지금 페이지 자신을 가리키는 링크(페이지#s=…)는 크롬이 PDF 에서 '문서 안 이동'으로 보고
+    // 빼 버린다 — 쿼리를 하나 붙여 다른 주소로 만들면 PDF 에서도 클릭 링크로 남는다.
+    var href = url.indexOf('#s=') >= 0
+      ? url.split('#')[0] + '?r=' + Date.now().toString(36) + '#' + url.split('#')[1]
+      : url;
+    var a = document.createElement('a'); a.href = href; a.className = 'plink'; a.textContent = href;
+    var lk = el('div', 'ph3', '이 입력으로 다시 열기: '); lk.appendChild(a);
+    head.appendChild(lk);
+    return stamp;
+  }
+  // 접힌 상세 항목은 인쇄하는 동안만 펼친다. 버튼이든 Ctrl+P 든 같은 처리.
+  var printOpened = [], printTitle = null, printHeadReady = false;
+  function preparePrint() {
+    printOpened = [];
+    document.querySelectorAll('details').forEach(function (d) { if (!d.open) { d.open = true; printOpened.push(d); } });
+  }
+  function finishPrint() {
+    printOpened.forEach(function (d) { d.open = false; });
+    printOpened = [];
+    if (printTitle !== null) { document.title = printTitle; printTitle = null; }
+    printHeadReady = false;
+  }
+  window.addEventListener('beforeprint', function () {
+    // Ctrl+P 로 바로 인쇄한 경우: 압축은 비동기라 여기선 비압축 링크로 즉시 채운다.
+    if (!printHeadReady) {
+      var url = null, cur = null;
+      try { cur = JSON.stringify(snapshotState()); } catch (e) { cur = null; }
+      if (cur && cachedShare && cachedShare.json === cur) url = cachedShare.url;       // 압축 링크(짧음)
+      else if (cur) url = shareUrlOf('j' + b64url(utf8Bytes(cur)));                  // 입력이 바뀌었으면 비압축
+      fillPrintHead(url || location.href.split('#')[0]);
+    }
+    preparePrint();
+  });
+  window.addEventListener('afterprint', finishPrint);
+
+  function savePdf() {
+    // PDF 에는 지금 입력으로 다시 계산한 결과를 함께 싣는다.
+    try { run(); } catch (e) { /* 결과 없이도 입력값은 인쇄 */ }
+    currentShareUrl().then(function (url) {
+      var stamp = fillPrintHead(url);
+      printHeadReady = true;
+      var name = (($('[data-k="projectName"]') || {}).value || '재무모델').trim();
+      printTitle = document.title;
+      document.title = name + '_입력값_' + stamp.slice(0, 10);   // 크롬·엣지는 이 제목을 PDF 파일 이름으로 쓴다
+      setTimeout(function () { window.print(); }, 60);
+    });
+  }
+
+  var shareBtn = $('#shareLink'); if (shareBtn) shareBtn.addEventListener('click', copyShareLink);
+  var pdfBtn = $('#savePdf'); if (pdfBtn) pdfBtn.addEventListener('click', savePdf);
+
+  // 공유 링크로 열었으면 입력 상태를 복원하고 바로 결과까지 계산한다.
+  (function restoreFromHash() {
+    var m = /^#s=([A-Za-z0-9_\-]+)$/.exec(location.hash || '');
+    if (!m) return;
+    decodeState(m[1]).then(function (s) {
+      restoreState(s);
+      try { run(); } catch (e) { /* 결과 계산 실패해도 입력 복원은 유지 */ }
+      toast('링크에 담긴 입력값을 불러왔습니다');
+    }).catch(function (e) { toast('링크를 불러오지 못했습니다: ' + e.message); });
+  })();
+
+  // 테스트·자동화용(화면 동작에는 영향 없음)
+  window.SolarShare = { snapshot: snapshotState, restore: restoreState, encode: encodeState, decode: decodeState, url: currentShareUrl };
 })();

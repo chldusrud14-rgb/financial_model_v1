@@ -7,6 +7,7 @@
   </div>
 
   <div class="wrap">
+    <div id="printHead"></div>
     <div class="warnbox">
       상환방식은 <b>원금균등</b>과 <b>원리금균등</b> 두 가지를 직접 입력할 수 있습니다.
       당진 FS의 <b>64회차 비율 상환</b>은 원본 스케줄이 곧 데이터라 직접 입력 대상이 아니며,
@@ -100,12 +101,17 @@
 
         <div class="card">
           <div class="hd"><h4>생성 결과</h4>
-            <button class="btn ghost" id="xls" style="margin-left:auto" disabled>Excel 다운로드</button>
+            <div class="outBtns">
+              <button class="btn ghost" id="shareLink" title="지금 입력값이 담긴 링크를 복사합니다">입력값 링크 복사</button>
+              <button class="btn ghost" id="savePdf" title="입력값과 결과를 화면 모양 그대로 PDF 로 저장합니다">PDF 저장</button>
+              <button class="btn ghost" id="xls" disabled>Excel 다운로드</button>
+            </div>
           </div>
           <div class="body">
             <div id="kpis"></div>
             <div class="note" id="metaNote"></div>
             <div id="shResults"></div>
+            <div id="shareBox"></div>
           </div>
         </div>
       </div>
