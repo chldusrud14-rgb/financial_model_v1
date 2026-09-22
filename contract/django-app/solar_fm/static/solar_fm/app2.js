@@ -509,8 +509,15 @@
     // 딸린 지출 스케줄까지 0으로 재생성돼 계산이 깨지던 문제.
     if (capexDetailOn && anyAmount(CAPEX_ITEMS)) {
       var capexEl = $('[data-k="capexEok"]');
-      capexEl.value = sum.toFixed(2);
-      capexEl.dispatchEvent(new Event('change', { bubbles: true }));
+      // 합계가 지금 총사업비와 같으면 다시 쓰지 않는다. 총사업비 'change' 는
+      // 지출 스케줄을 기본값으로 다시 만드는데, 예시(당진)처럼 실측 스케줄이
+      // 들어 있는 상태에서 값이 그대로인데도 덮어쓰면 실측 스케줄이 사라진다.
+      // 소수 둘째 자리로 자르면 엑셀(항목을 그대로 SUM)과 최대 0.5백만원씩
+      // 어긋난다 — 계산에 쓰이는 값이므로 정밀도를 유지한다.
+      if (Math.abs((Number(capexEl.value) || 0) - sum) >= 1e-6) {
+        capexEl.value = +sum.toFixed(6);
+        capexEl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     }
   }
 
@@ -1224,9 +1231,18 @@
     var opexToggleEl = $('#opexDetailToggle');
     if (opexToggleEl) opexToggleEl.checked = true;
     toggleOpexDetail(true);
-    // 총사업비는 원본에도 항목별 실측 내역(EPC/감리비 등 세부금액)이
-    // 없어서(총액만 존재) 항목별 모드로 켜지 않는다 — 켜면 빈 항목
-    // 합계(0)로 총사업비가 덮어써져서 오히려 틀린 값이 됨.
+    // 총사업비도 원본에 항목별 내역이 있다(Assum!B87:F99 '총투자비 상세내역').
+    // 예전 주석은 "원본에 총액만 있다"고 했으나 사실이 아니었다 — 추출을
+    // 빠뜨렸을 뿐. 12개 합계 = 총사업비(건설이자 제외)라 총액이 바뀌지 않고,
+    // updateCapexItemSum 은 합계가 같으면 총사업비를 다시 쓰지 않으므로
+    // 실측 지출 스케줄도 그대로 남는다.
+    if (ref.capexItems && ref.capexItems.length) {
+      CAPEX_ITEMS = ref.capexItems.map(function (it) { return { name: it.name, amountEok: it.amountKRWm / 100 }; });
+      capexItemsPlant = 'solar';
+      var capexToggleEl = $('#capexDetailToggle');
+      if (capexToggleEl) capexToggleEl.checked = true;
+      toggleCapexDetail(true);
+    }
     setVal('[data-k="decomEok"]', ref.results.철거비 / 100);
     setVal('[data-k="depRatio"]', 95); setVal('[data-k="depYears"]', 20);
     setVal('[data-k="lossRate"]', 80); setVal('[data-k="taxFlat"]', 21);

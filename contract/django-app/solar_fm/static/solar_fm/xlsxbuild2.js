@@ -462,6 +462,24 @@
           r++;
         });
         r += 1;
+        // 항목별 금액을 넣었으면 위 "총사업비"는 입력 칸이 아니라 이 항목들의
+        // 합계다(화면에서도 항목별 입력을 켜면 총액 칸이 잠기고 합계로 채워진다).
+        // 예전엔 총사업비와 항목이 따로 노란 입력 칸이라, 엑셀에서 EPC 를 고쳐도
+        // 총사업비·계산이 따라오지 않았다.
+        var capexAmtCells = IN_ADDR.capexItem.filter(function (a) { return a.hasAmount; })
+          .map(function (a) { return a.amount; });
+        // 단, 항목 합계가 실제 계산에 쓰인 총사업비와 같을 때만 합계 수식으로 바꾼다.
+        // 다르면(어떤 경로로든 둘이 어긋난 경우) 합계로 바꾸는 순간 엑셀이 화면과
+        // 다른 총사업비로 계산하게 되므로, 총사업비는 입력값 그대로 두고 항목은
+        // 참고 표시로만 남긴다.
+        var capexItemSum = model.capexItems.reduce(function (a, it) { return a + (it.amountEok || 0); }, 0);
+        var capexMatches = Math.abs(capexItemSum - (inp.capexEok || 0)) <= 1e-6 * Math.max(1, Math.abs(inp.capexEok || 0));
+        if (capexAmtCells.length && capexMatches) {
+          putF(ws, IN_ADDR.capexEok, 'SUM(' + capexAmtCells.join(',') + ')', FMT_M, { bold: true });
+          var capexLbl = ws.getCell('B' + IN_ADDR.capexEok.slice(1));
+          capexLbl.value = '총사업비[억원] (= 아래 총사업비 항목 합계)';
+          IN_ADDR.capexFromItems = true;
+        }
       }
 
       if (inp.opexItems && inp.opexItems.length) {
@@ -641,18 +659,23 @@
           c.alignment = { horizontal: 'center' };
         });
         r++;
+        var capexDetailFirst = r;
         model.capexItems.forEach(function (it, idx) {
           var ia = IN_ADDR.capexItem[idx];
           putF(ws, 'B' + r, IN + ia.name, '@');
           if (ia.hasAmount) putF(ws, 'C' + r, IN + ia.amount + '*100', FMT_M);
           r++;
         });
-        // 항목별 금액을 안 넣었어도(전부 빈칸이어도) 합계는 항상 위
-        // "총사업비" 입력값 그대로 나온다 — 항목 합계가 아니라 실제
-        // 입력된 총사업비를 그대로 쓰므로 항목을 일부만 채워도 항상
-        // 정확하다.
-        put(ws, 'B' + r, '합계', '@', { bold: true, fill: SUB_FILL });
-        putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M, { bold: true, fill: SUB_FILL });
+        // 합계는 이 시트에서 위 항목을 더한다("합계는 그 시트 안에서").
+        // 항목별 금액을 하나도 안 넣었으면(이름만 표시) 더할 게 없으므로
+        // 입력한 총사업비를 그대로 보여준다.
+        if (IN_ADDR.capexFromItems) {
+          put(ws, 'B' + r, '합계', '@', { bold: true, fill: SUB_FILL });
+          putF(ws, 'C' + r, 'SUM(C' + capexDetailFirst + ':C' + (r - 1) + ')', FMT_M, { bold: true, fill: SUB_FILL });
+        } else {
+          put(ws, 'B' + r, '총사업비 (항목별 금액 미입력)', '@', { bold: true, fill: SUB_FILL });
+          putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M, { bold: true, fill: SUB_FILL });
+        }
         r++;
       }
 
@@ -894,7 +917,10 @@
                 pc(n) + openRow + '*' + IN + ia.rateO + '/4', FMT_M);
             }
           } else if (canScheduleLink && n >= t.repayStartIdx && n < t.repayStartIdx + t.schedule.length) {
-            putF(ws, pc(n) + prinRow, IN + pc(n) + IN_ADDR.schedule[ti] + '*' + IN + ia.amount + '*100', FMT_M);
+            // 방식 3 도 엔진처럼 "실제 인출액 × 회차 비율". 약정액(입력값 금액)을
+            // 곱하면 인출이 약정보다 적을 때(총사업비를 줄인 경우 등) 빌리지 않은
+            // 돈까지 갚아 잔액이 음수가 된다.
+            putF(ws, pc(n) + prinRow, IN + pc(n) + IN_ADDR.schedule[ti] + '*' + amortBase, FMT_M);
           } else {
             put(ws, pc(n) + prinRow, prins[n], FMT_M);
           }
@@ -931,7 +957,7 @@
           put(ws, 'H' + r, '※ 방식 3(직접 키인) — 원금상환은 "입력값" 시트의 상환비율 표를 참조하는 수식', null);
           ws.getCell('H' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
         } else if (!canFormula) {
-          put(ws, 'H' + r, '※ 미사용 트랜치 — 값(baked) 기준', null);
+          put(ws, 'H' + r, '※ 미사용 트랜치(금액 0) — 인출·상환 없음', null);
           ws.getCell('H' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
         }
         r += 2;
@@ -1292,7 +1318,7 @@
         ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       } else if (flatMode) {
         r++;
-        ws.getCell('B' + r).value = '※ 실측 오버라이드가 적용된 분기(있다면)는 값(baked)이고, 그 외 분기는 "입력값" 시트의 운영비 총액/에스컬레이션/후순위 비중을 참조하는 수식입니다.';
+        ws.getCell('B' + r).value = '※ 실측 오버라이드가 적용된 분기(예시 불러오기)는 "입력값" 시트의 실측 표를, 그 외 분기는 운영비 총액/에스컬레이션/후순위 비중(또는 운영비 항목)을 참조하는 수식입니다.';
         ws.getCell('B' + r).font = { name: FONT, size: 8, italic: true, color: { argb: 'FF9AA6A1' } };
       }
     })();
@@ -2152,7 +2178,7 @@
         r++;
       });
       r += 1;
-      ws.getCell('B' + r).value = '※ Funding 시트의 트랜치 조건·총사업비 항목·사업자 지분은 "입력값" 시트를 참조하는 수식입니다(입력값 시트를 고치면 같이 바뀝니다). 그 외 계산 결과(세금·DSCR·배당 등)는 값(baked) 기준이라 가정을 바꾸려면 생성기에서 다시 뽑아야 합니다.';
+      ws.getCell('B' + r).value = '※ 입력값 시트(노란 탭) 외의 모든 값은 수식입니다. 노란 셀을 고치면 세금·DSCR·배당·IRR 까지 전부 다시 계산됩니다. 회색 셀(거치·상환·방식·투입순서, DSRA 적립기준)은 스케줄의 모양을 정하는 값이라 화면에서 다시 생성해야 합니다. 각 계산 시트 맨 아래 "가정" 블록이 입력값 시트를 참조하는 유일한 곳입니다.';
       ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FFB4573C' } };
     })();
 
