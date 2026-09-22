@@ -1004,7 +1004,7 @@ window.__DANGJIN_REFERENCE__ = {
   "capexItems": [
     {
       "name": "EPC",
-      "amountKRWm": 108999.99999999999
+      "amountKRWm": 109000.0
     },
     {
       "name": "감리비",
@@ -1016,7 +1016,7 @@ window.__DANGJIN_REFERENCE__ = {
     },
     {
       "name": "토지임대료(선납)",
-      "amountKRWm": 6700.335777232967
+      "amountKRWm": 6700.3358
     },
     {
       "name": "토지임대료(분납)",
@@ -1040,15 +1040,15 @@ window.__DANGJIN_REFERENCE__ = {
     },
     {
       "name": "기타예비비",
-      "amountKRWm": 5129.200853936869
+      "amountKRWm": 5129.2009
     },
     {
       "name": "신주발행비용",
-      "amountKRWm": 78.00000000000001
+      "amountKRWm": 78.0
     },
     {
       "name": "금융부대비용",
-      "amountKRWm": 1091.284337654818
+      "amountKRWm": 1091.2843
     }
   ],
   "capexItemsNote": "Assum!B87:F99 '총투자비 상세내역'(= TIC!B12:D24)에서 추출. 건설이자(3,931.179)는 모델이 인출 스케줄로 계산하므로 제외 — 나머지 12개 합계 = funding.TIC_exIDC(141,068.821).",
