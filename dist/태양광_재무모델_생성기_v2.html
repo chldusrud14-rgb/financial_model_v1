@@ -3674,6 +3674,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     var DEFERRED = [];
     var CFQ_MINDSCR_ROW = null, CFQ_MINCUMDSCR_ROW = null;
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
+    var CFQ_EQFLOWPRE_ROW = null, CFQ_EQIRRPRE_ROW = null;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
     var CFQ_PROJFLOWPRE_ROW = null, CFQ_PROJIRRPRE_ROW = null;
     var DEBT_CAPEX_SPEND_ROW = null; // Debt 의 '공사비 지출' 행 — CF(Q) IRR용 현금흐름이 참조
@@ -5451,6 +5452,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       label(ws, r, 'Equity 현금흐름(FCFE 기준)', '[KRWm]');
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '13-' + pc(n) + equityDrawRow, FMT_M);
       r++;
+      // 세전 FCFE = FCFE + FCFE 에서 실제로 빠진 법인세(엔진 r.taxEffective = 발생주의 세금 − 세금 현금조정).
+      // 화면의 'Equity IRR (FCFE) 세전' 과 같은 정의.
+      CFQ_EQFLOWPRE_ROW = r;
+      label(ws, r, 'Equity 현금흐름(FCFE 세전)', '[KRWm]');
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + r, pc(n) + "13-'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + '-' + pc(n) + taxAdjRow + '-' + pc(n) + equityDrawRow, FMT_M);
+      }
+      r++;
       CFQ_DIVFLOW_ROW = r;
       label(ws, r, 'Equity 현금흐름(배당 기준)', '[KRWm]');
       for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '16-' + pc(n) + equityDrawRow, FMT_M);
@@ -5488,7 +5497,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
       CFQ_PROJIRRPRE_ROW = irrRow('Project IRR(세전)', CFQ_PROJFLOWPRE_ROW, model.kpi.projectIRRPre || 0.09);
       CFQ_PROJIRR_ROW = irrRow('Project IRR(세후)', CFQ_PROJFLOW_ROW, model.kpi.projectIRR || 0.08);
-      CFQ_EQIRR_ROW = irrRow('Equity IRR(FCFE)', CFQ_EQFLOW_ROW, model.kpi.equityIRR || 0.1);
+      CFQ_EQIRRPRE_ROW = irrRow('Equity IRR(FCFE 세전)', CFQ_EQFLOWPRE_ROW, model.kpi.equityIRRPre || 0.12);
+      CFQ_EQIRR_ROW = irrRow('Equity IRR(FCFE 세후)', CFQ_EQFLOW_ROW, model.kpi.equityIRR || 0.1);
       CFQ_DIVIRR_ROW = irrRow('Equity IRR(배당)', CFQ_DIVFLOW_ROW, model.kpi.dividendIRR || 0.1);
       CFQ_INVIRR_ROW = irrRow('Investor IRR', CFQ_INVFLOW_ROW, model.kpi.investorIRR || 0.06);
       r++;
@@ -5529,11 +5539,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       kvF('차입금 합계 [KRWm]', "'Funding'!" + FUNDING_DEBT_ADDR, FMT_M);
       r++;
       section(ws, r, '수익성 지표'); r += 2;
-      kvF('Project IRR 세전 [%]', "'CF(Q)'!D" + CFQ_PROJIRRPRE_ROW, FMT_P);
-      kvF('Project IRR 세후 [%]', "'CF(Q)'!D" + CFQ_PROJIRR_ROW, FMT_P);
-      kvF('Equity IRR (FCFE) [%]', "'CF(Q)'!D" + CFQ_EQIRR_ROW, FMT_P);
-      kvF('Equity IRR (배당) [%]', "'CF(Q)'!D" + CFQ_DIVIRR_ROW, FMT_P);
-      kvF('Investor IRR [%]', "'CF(Q)'!D" + CFQ_INVIRR_ROW, FMT_P);
+      // 화면(HTML) 결과 카드와 같은 이름·같은 순서. E열에 한 줄 설명.
+      function irrKv(name, row, note) {
+        kvF(name, "'CF(Q)'!D" + row, FMT_P);
+        ws.getCell('E' + (r - 1)).value = note;
+        ws.getCell('E' + (r - 1)).font = { name: FONT, size: 8, color: { argb: 'FF6B7B76' } };
+      }
+      irrKv('Equity IRR (배당) [%]', CFQ_DIVIRR_ROW, '출자자가 실제로 받는 배당 기준(세후) — 가장 보수적인 대표 수익률');
+      irrKv('Equity IRR (FCFE) 세전 [%]', CFQ_EQIRRPRE_ROW, '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때, 법인세 전');
+      irrKv('Equity IRR (FCFE) 세후 [%]', CFQ_EQIRR_ROW, '위와 같되 법인세 후 — 배당 제한(DSCR·최소현금·배당가능이익)이 없다고 본 값');
+      irrKv('Project IRR 세전 [%]', CFQ_PROJIRRPRE_ROW, '차입 없이 사업 전체(총사업비 vs 영업현금흐름)의 수익률, 법인세 전');
+      irrKv('Project IRR 세후 [%]', CFQ_PROJIRR_ROW, '위와 같되 법인세 후');
+      irrKv('Investor IRR [%]', CFQ_INVIRR_ROW, '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·이자·배당 회수 (원본 IRR 시트 정의)');
       kvF('최소 단순DSCR(연 합산) [x]', "'CF(Q)'!D" + CFQ_MINDSCR_ROW, FMT_X);
       kvF('최소 누적DSCR [x]', "'CF(Q)'!D" + CFQ_MINCUMDSCR_ROW, FMT_X);
       kvF('총영업수익(전체기간) [KRWm]', "'Revenue'!D" + REV_TOTAL_ROW, FMT_M);
@@ -7438,9 +7455,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // 세후는 오른쪽에 두고 원래 톤 그대로 — 같은 지표를 나란히 비교하기 쉽게.
     box.appendChild(kpiGroup('수익성 상세', [
       ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%', '', (kpiTone(k.equityIRRPre, 'neg') + ' dim').trim()],
-      ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '', kpiTone(k.equityIRR, 'neg')],
+      ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때(배당 제한 없음)', kpiTone(k.equityIRR, 'neg')],
       ['Project IRR 세전', pct(k.projectIRRPre), '%', '', (kpiTone(k.projectIRRPre, 'neg') + ' dim').trim()],
-      ['Project IRR 세후', pct(k.projectIRR), '%', '', kpiTone(k.projectIRR, 'neg')]
+      ['Project IRR 세후', pct(k.projectIRR), '%', '차입 없이 사업 전체의 수익률', kpiTone(k.projectIRR, 'neg')],
+      ['Investor IRR', pct(k.investorIRR), '%', '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·배당 회수', kpiTone(k.investorIRR, 'neg')]
     ]));
     box.appendChild(kpiGroup('사업 규모·수익구조', [
       ['연평균 EBITDA', f0(k.avgEbitda), 'KRWm/yr', '', kpiTone(k.avgEbitda, 'neg')],

@@ -1343,9 +1343,10 @@
     // 세후는 오른쪽에 두고 원래 톤 그대로 — 같은 지표를 나란히 비교하기 쉽게.
     box.appendChild(kpiGroup('수익성 상세', [
       ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%', '', (kpiTone(k.equityIRRPre, 'neg') + ' dim').trim()],
-      ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '', kpiTone(k.equityIRR, 'neg')],
+      ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때(배당 제한 없음)', kpiTone(k.equityIRR, 'neg')],
       ['Project IRR 세전', pct(k.projectIRRPre), '%', '', (kpiTone(k.projectIRRPre, 'neg') + ' dim').trim()],
-      ['Project IRR 세후', pct(k.projectIRR), '%', '', kpiTone(k.projectIRR, 'neg')]
+      ['Project IRR 세후', pct(k.projectIRR), '%', '차입 없이 사업 전체의 수익률', kpiTone(k.projectIRR, 'neg')],
+      ['Investor IRR', pct(k.investorIRR), '%', '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·배당 회수', kpiTone(k.investorIRR, 'neg')]
     ]));
     box.appendChild(kpiGroup('사업 규모·수익구조', [
       ['연평균 EBITDA', f0(k.avgEbitda), 'KRWm/yr', '', kpiTone(k.avgEbitda, 'neg')],
