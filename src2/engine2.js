@@ -745,6 +745,24 @@
     var out = runOps();
     var rows = out.rows;
 
+    /* 무차입(all-equity) 재실행 — 이자가 없으니 세금이 교과서 정의대로 계산된다.
+       같은 자산을 보려면 감가상각 기준(상각대상액)을 레버리지 케이스와 똑같이 고정해야 한다
+       (무차입이면 IDC 가 0 이라 TIC 가 작아져 감가상각이 달라지기 때문).
+       재귀를 막기 위해 내부 호출에는 __unlev 플래그를 세운다. */
+    function unlevProjectIRR() {
+      if (inp.__unlev) return null;
+      try {
+        var u = JSON.parse(JSON.stringify(inp));
+        u.__unlev = true;
+        u.tranches = [];                      // 부채 없음 → 이자·IDC 0
+        u.equityEok = (capex + dsra0) / 100;   // 소요액 전액 자본으로 조달(이 스코프의 capex·dsra0 는 KRWm)
+        u.depBaseOverride = depBase;            // 감가상각 기준은 레버리지 케이스와 동일
+        var m2 = computeModel(u);
+        var v = m2.kpi.projectIRR;
+        return (typeof v === 'number' && isFinite(v)) ? v : null;
+      } catch (e) { return null; }
+    }
+
     /* ---- 지표 ---- */
     var projFlows = [], eqFlows = [], eqFlowsPre = [], divFlows = [], preFlows = [], investorFlows = [];
     // 건설기간 유출
@@ -852,6 +870,14 @@
         // 구조다. 모델은 현금이 음수여도 계산을 계속하므로(배당만 0으로 막힘) 이 값을
         // 내보내서 화면·엑셀이 경고할 수 있게 한다.
         minCashClose: rows.length ? Math.min.apply(null, rows.map(function (r) { return r.cashClose || 0; })) : null,
+        /* 무차입 기준 Project IRR 세후 — 교과서/국제 자문사 정의.
+           현재 `projectIRR` 은 **실제 납부 법인세**(이자 손금으로 줄어든 금액)를 빼기 때문에
+           차입의 세금 절감 효과가 섞여 과대평가된다(원본 당진 FS 정의라 그대로 둔다).
+           그 값만으로 Equity IRR 과 비교하면 "금리보다 수익률이 높은데 Equity 가 더 낮다"는
+           오해가 생긴다(2026-10-02 사용자 지적). 그래서 **부채 0·같은 자산(감가상각 기준 동일)**
+           으로 엔진을 한 번 더 돌려 정확한 무차입 세후 수익률을 참고값으로 같이 낸다.
+           근사가 아니라 같은 세무 로직(브래킷·이월결손금·세액공제)을 그대로 쓴 값이다. */
+        projectIRRUnlev: unlevProjectIRR(),
         // 운전자금 부족분으로 들어간 추가 출자 합계 — 0 이 아니면 약정 자기자본만으로는
         // 사업이 안 돌아간다는 뜻이고, 위 Equity IRR 은 이 돈까지 넣고 계산된 값이다.
         totalEquityInject: rows.reduce(function (a, r) { return a + (r.equityInject || 0); }, 0),

@@ -1584,7 +1584,8 @@
       ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%', '', (kpiTone(k.equityIRRPre, 'neg') + ' dim').trim()],
       ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때(배당 제한 없음)', kpiTone(k.equityIRR, 'neg')],
       ['Project IRR 세전', pct(k.projectIRRPre), '%', '', (kpiTone(k.projectIRRPre, 'neg') + ' dim').trim()],
-      ['Project IRR 세후', pct(k.projectIRR), '%', '실제 납부 법인세 기준(이자 손금 반영) — Equity 세후와 직접 비교하지 마세요. 레버리지 효과는 세전끼리 비교', kpiTone(k.projectIRR, 'neg')],
+      ['Project IRR 세후', pct(k.projectIRR), '%', '실제 납부 법인세 기준(원본 FS 정의) — 이자 손금이 반영돼 있어 Equity 세후와 직접 비교하면 안 됩니다', kpiTone(k.projectIRR, 'neg')],
+      ['Project IRR 세후(무차입 기준)', pct(k.projectIRRUnlev), '%', '차입이 전혀 없다고 보고 법인세를 다시 계산한 값 — 교과서·국제 자문사 정의. 레버리지 효과는 이 값과 Equity 세후를 비교하세요', (kpiTone(k.projectIRRUnlev, 'neg') + ' dim').trim()],
       ['Investor IRR', pct(k.investorIRR), '%', '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·배당 회수', kpiTone(k.investorIRR, 'neg')]
     ]));
     box.appendChild(kpiGroup('사업 규모·수익구조', [

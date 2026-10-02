@@ -152,6 +152,12 @@ v1/v2 산출물 다 오프라인 동작 확인됨(`npm run test:ui`/`test:ui2`).
    유출로 뺀다. 예전엔 음수로 두고 경고만 띄워서 배당·IRR 이 과대평가됐다(15번째 라운드).
    새로운 "불가능한 상태"를 발견하면 경고가 아니라 구조로 막을 것.
 
+13. **NaN/Infinity 를 셀에 쓰면 엑셀 파일이 열리지 않는다**(ExcelJS 가 `<v>NaN</v>` 을 내보냄).
+   `put()` 이 유한성 검사로 막아 두었으니 우회해서 `getCell().value =` 로 직접 쓰지 말 것.
+   IRR 류 KPI 는 NaN 일 수 있다(16번째 라운드에 워크북이 실제로 깨졌다).
+14. **Project IRR 세후는 실제 납부 법인세 기준**(원본 FS 정의)이라 이자 손금이 섞여 있다.
+   Equity 와 레버리지를 비교할 때는 `kpi.projectIRRUnlev`(부채 0 으로 재실행한 무차입 세후)를 쓸 것.
+
 ## `.xlsm` 원본에서 값을 뽑을 때
 
 `python3 -c "import openpyxl; wb=openpyxl.load_workbook('reference/당진_..._final.xlsm', data_only=True); ..."`

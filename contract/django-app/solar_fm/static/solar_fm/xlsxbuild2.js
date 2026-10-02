@@ -188,6 +188,10 @@
     function put(ws, addr, value, fmt, opt) {
       opt = opt || {};
       var c = ws.getCell(addr);
+      /* NaN/Infinity 를 그대로 쓰면 ExcelJS 가 <v>NaN</v> 을 내보내 **파일이 열리지 않는다**
+         (2026-10-02: 무차입 IRR 이 계산 불가인 시나리오에서 워크북이 깨졌다).
+         수학적으로 정의되지 않는 지표는 빈칸으로 둔다 — 숫자가 아닌 건 쓰지 않는다. */
+      if (typeof value === 'number' && !isFinite(value)) value = null;
       c.value = value;
       c.numFmt = fmt || FMT_M;
       c.font = { name: FONT, size: 10, bold: !!opt.bold, color: { argb: opt.color || BLACK } };
@@ -2160,6 +2164,16 @@
       irrKv('Project IRR 세후 [%]', CFQ_PROJIRR_ROW,
         '실제 납부 법인세 기준 — 이자 손금(차입으로 줄어든 세금)이 반영돼 있어 Equity IRR 세후와 직접 비교하면 안 됩니다. 레버리지 효과는 세전끼리 비교하세요');
       irrKv('Investor IRR [%]', CFQ_INVIRR_ROW, '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·이자·배당 회수 (원본 IRR 시트 정의)');
+      /* 무차입 기준 Project IRR 세후 — 참고값(스냅샷).
+         위 'Project IRR 세후' 는 실제 납부 법인세(이자 손금 반영) 기준이라 Equity 세후와 직접
+         비교할 수 없다. 이 행은 부채가 전혀 없다고 보고 같은 세무 로직으로 다시 계산한 값으로,
+         레버리지 효과를 볼 때 Equity IRR 세후와 이 값을 비교하면 된다.
+         엔진을 한 번 더 돌려 얻은 값이라 이 셀만 수식이 아니라 값이다(민감도 시트와 같은 성격). */
+      if (typeof model.kpi.projectIRRUnlev === 'number' && isFinite(model.kpi.projectIRRUnlev)) {
+        kv('Project IRR 세후(무차입 기준) [%]', model.kpi.projectIRRUnlev, FMT_P);
+        ws.getCell('E' + (r - 1)).value = '참고값(스냅샷) — 차입이 없다고 보고 법인세를 다시 계산한 교과서 정의. 레버리지 효과는 Equity IRR 세후와 이 값을 비교하세요';
+        ws.getCell('E' + (r - 1)).font = { name: FONT, size: 8, color: { argb: 'FF6B7B76' } };
+      }
       kvF('최소 단순DSCR(연 합산) [x]', "'CF(Q)'!D" + CFQ_MINDSCR_ROW, FMT_X);
       kvF('최소 누적DSCR [x]', "'CF(Q)'!D" + CFQ_MINCUMDSCR_ROW, FMT_X);
       /* 운영 중 최저 기말현금 — 음수면 추가 출자/브리지 없이는 성립하지 않는 구조이고
