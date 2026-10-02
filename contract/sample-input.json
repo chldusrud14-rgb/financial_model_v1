@@ -13,7 +13,7 @@
   "capexEok": 1410.69,
   "opexEok": 49.8,
   "opexEscal": 0.7,
-  "equityEok": 150,
+  "equityEok": 150.03,
   "equityOrder": 1,
   "dsraEok": 50,
   "dsraMonths": 6,
@@ -51,7 +51,7 @@
   "tranches": [
     {
       "name": "선순위A",
-      "amountEok": 800,
+      "amountEok": 855.35,
       "rateC": 5.6,
       "rateO": 5.6,
       "order": 2,
@@ -61,7 +61,7 @@
     },
     {
       "name": "선순위B",
-      "amountEok": 460.69,
+      "amountEok": 492.56,
       "rateC": 5.5,
       "rateO": 5.5,
       "order": 2,

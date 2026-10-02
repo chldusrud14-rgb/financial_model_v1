@@ -776,6 +776,30 @@
     });
   }
 
+  /* 입력 객체(inp)의 조달을 소요액에 맞춘다 — 자기자본비율 ratio 고정.
+     화면과 무관하게 동작해야 하므로(민감도 시나리오용) DOM 을 읽지 않는다.
+     건설이자가 순환이라 3회 반복으로 수렴시킨다. */
+  function sizeFundingForInput(inp, ratio) {
+    var capex = Number(inp.capexEok) || 0, dsra = Number(inp.dsraEok) || 0;
+    var need = capex + dsra;
+    for (var it = 0; it < 3; it++) {
+      var eq = need * ratio;
+      var debt = Math.max(0, need - eq);
+      inp.equityEok = eq;
+      inp.tranches = scaleDebt(inp.tranches || [], debt);
+      var idc = 0;
+      try { idc = (M.computeModel(inp).idc || 0) / 100; } catch (e) { break; }
+      var next = capex + dsra + idc;
+      var done = Math.abs(next - need) < 1e-6;
+      need = next;
+      if (done) break;
+    }
+    var eq2 = need * ratio;
+    inp.equityEok = eq2;
+    inp.tranches = scaleDebt(inp.tranches || [], Math.max(0, need - eq2));
+    return inp;
+  }
+
   // 화면 입력으로 모델을 시험 실행해 건설이자를 얻고, 소요액을 되짚는다
   function fundingNeedEok(equityEok, debtEok) {
     var core = readCore();
@@ -1113,10 +1137,21 @@
     // Base도 다른 행과 똑같은 일반 시나리오 행이다 — 빈 칸이면 applyScenario가
     // 알아서 위 폼 값을 그대로 쓰므로 특별 취급이 필요 없다.
     SENS_ROWS = readSensRows();
+    /* 총사업비·금리를 바꾸면 조달 소요액(= 총사업비 + DSRA + 건설이자)도 바뀐다.
+       예전엔 트랜치 약정을 그대로 둔 채 계산해서, 사업비를 올린 시나리오가
+       "늘어난 사업비를 조달하지 않은" 상태로 돌아갔다 — 이자가 안 붙어
+       Equity IRR 이 오히려 좋아지는 거꾸로 된 결과가 나왔다(2026-10-02 사용자 발견:
+       EPC 를 올린 Case1 의 배당 IRR 이 Base 보다 높게). 시나리오마다 조달을
+       소요액에 맞추고, 자기자본비율은 기준 케이스와 같게 유지한다. */
+    var baseNeed = (Number(baseInp.capexEok) || 0) + (Number(baseInp.dsraEok) || 0) +
+      (function () { try { return (M.computeModel(baseInp).idc || 0) / 100; } catch (e) { return 0; } })();
+    var baseRatio = baseNeed > 0 ? (Number(baseInp.equityEok) || 0) / baseNeed : 0;
     var results = SENS_ROWS.map(function (sc) {
       try {
-        var m = M.computeModel(applyScenario(baseInp, sc));
-        return { name: sc.name, sc: sc, kpi: m.kpi };
+        var scInp = sizeFundingForInput(applyScenario(baseInp, sc), baseRatio);
+        var m = M.computeModel(scInp);
+        return { name: sc.name, sc: sc, kpi: m.kpi,
+          equityEok: scInp.equityEok, debtEok: (scInp.tranches || []).reduce(function (a, t) { return a + (t.amountEok || 0); }, 0) };
       } catch (e) {
         return { name: sc.name, sc: sc, error: e.message };
       }

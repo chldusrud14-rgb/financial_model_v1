@@ -46,7 +46,13 @@ function readStdin() {
     const nanKeys = Object.keys(result.kpi || {}).filter(
       k => typeof result.kpi[k] === 'number' && !isFinite(result.kpi[k]));
 
-    process.stdout.write(JSON.stringify({ ok: true, undefinedKpis: nanKeys, result }));
+    /* 조달 충족 여부 — 약정(자본금+트랜치)이 소요액(총사업비+DSRA+건설이자)보다 작으면
+       못 빌린 돈이 공짜로 조달된 셈이 되어 이자가 과소계상되고 수익률이 과대평가된다.
+       화면(생성기)은 이 상태를 막지만, API 로 쓰는 쪽은 이 값을 직접 확인해야 한다. */
+    const need = (result.con && result.con.needTotal) || 0;
+    const unfunded = (result.con && result.con.unfunded) || 0;
+    const funding = { needTotalKRWm: need, unfundedKRWm: unfunded, sufficient: unfunded <= 1 };
+    process.stdout.write(JSON.stringify({ ok: true, undefinedKpis: nanKeys, funding: funding, result }));
   } catch (e) {
     process.stdout.write(JSON.stringify({ ok: false, error: String(e && e.message || e) }));
     process.exitCode = 1;
