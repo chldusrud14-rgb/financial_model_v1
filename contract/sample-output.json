@@ -6268,6 +6268,7 @@
   "avgDSCR": 1.227193192838379,
   "minCumDSCR": 1.187143523658971,
   "minDSCRAnnual": 1.0073021924292676,
+  "minCashClose": 0,
   "totalDividend": 80440.30003403581,
   "totalRevenue": 405788.8886999999,
   "totalOpex": 106510.04740942549,

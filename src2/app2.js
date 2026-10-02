@@ -766,6 +766,27 @@
      조용히 사라져 이자·원리금이 과소계상되고 IRR이 좋게 나왔다
      (2026-10-02 사용자 발견). 이제 소요액 기준으로 산정하고, 부족하면 생성을 막는다. */
   var debtAutoSized = false;   // 부채 금액이 자동 산정된 상태인가(사용자가 직접 고치면 해제)
+  var sensInputFingerprint = null;   // 민감도를 돌린 시점의 입력 지문(바뀌면 결과 무효화)
+
+  /* 입력이 바뀌면 민감도 결과를 버린다.
+     민감도는 화면 입력을 직접 읽으므로 "생성 → 민감도" 순서는 상관없지만, 민감도를 돌린 뒤
+     입력을 고치면 표와 엑셀 민감도 시트가 옛 입력 기준으로 남는다. 거래처로 나가는 자료에
+     그게 섞이면 치명적이라 결과를 지우고 다시 실행하라고 알린다(2026-10-02 사용자 질문). */
+  function invalidateSensIfInputChanged() {
+    if (!lastSensResults || sensInputFingerprint == null) return;
+    var now;
+    try { now = JSON.stringify(snapshotState()); } catch (e) { return; }
+    if (now === sensInputFingerprint) return;
+    lastSensResults = null; sensInputFingerprint = null;
+    var box = $('#sensResults');
+    if (box) {
+      box.innerHTML = '';
+      var w = el('div', 'sensStale');
+      w.appendChild(el('div', 'sensStaleT', '입력이 바뀌어 민감도 결과를 지웠습니다'));
+      w.appendChild(el('div', 'sensStaleB', '아래 "민감도 분석 실행"을 다시 누르세요 — 다시 실행하기 전에는 엑셀에 민감도 시트가 들어가지 않습니다.'));
+      box.appendChild(w);
+    }
+  }
 
   // 부채 총액을 트랜치에 배분 — 금액이 든 트랜치들의 비율 유지, 전부 0이면 첫 트랜치로
   function scaleDebt(trs, totalEok) {
@@ -1157,6 +1178,8 @@
       }
     });
     lastSensResults = results;
+    // 민감도를 돌린 시점의 입력 지문 — 이후 입력이 바뀌면 이 결과는 묵은 값이 된다.
+    try { sensInputFingerprint = JSON.stringify(snapshotState()); } catch (e) { sensInputFingerprint = null; }
     renderSensResults(results);
     toast(
       (wasPreset ? '프리셋을 해제하고 일반 계산식 기준으로 전환했습니다 — ' : '') +
@@ -1258,7 +1281,9 @@
     if (fromRatio) {
       if (ratioEl.value !== '') {
         eqEl.value = (need * Number(ratioEl.value) / 100).toFixed(2);
-        if (debtAutoSized) autoSizeFunding({ silent: true });
+        // 자기자본비율은 "조달 구조"를 정하는 입력이다 — 자본금만 바꾸고 부채를 그대로 두면
+        // 조달이 모자라 생성이 막힌다. 비율을 넣으면 부채까지 같이 맞춘다(비율대로 비례 배분).
+        autoSizeFunding({ silent: true });
       }
     } else {
       ratioEl.value = (Number(eqEl.value) / need * 100).toFixed(2);
@@ -1495,6 +1520,19 @@
 
     var box = $('#kpis'); box.innerHTML = '';
 
+    /* 운영 중 현금 부족 경고. 조달 부족과 달리 "입력 모순"이 아니라 사업성 결과이므로
+       계산은 보여주되, 이 상태에서 배당·FCFE IRR 이 과대평가된다는 걸 분명히 알린다
+       (모델은 현금이 음수여도 배당만 0으로 막고 계산을 계속한다). */
+    if (k.minCashClose !== null && k.minCashClose < -1) {
+      var cw = el('div', 'cashWarn');
+      cw.appendChild(el('div', 'cashWarnT', '운영 중 보유현금이 ' + feok(Math.abs(k.minCashClose)) + '억원 부족합니다'));
+      cw.appendChild(el('div', 'cashWarnB',
+        '영업현금흐름이 원리금을 못 덮는 구간이 있어 현금이 마이너스로 내려갑니다. 실제로는 그 시점에 ' +
+        '추가 출자나 브리지 대출이 필요하고, 그 돈이 반영되지 않았으므로 아래 Equity IRR(배당·FCFE)은 ' +
+        '과대평가된 값입니다. 상환기간·거치기간·자기자본비율을 조정해 최저 현금이 0 이상이 되게 맞추세요.'));
+      box.appendChild(cw);
+    }
+
     // 히어로 카드 — 사업자가 가장 먼저 보고 싶어할 "실수령 기준" 수익률
     var hero = el('div', 'kpiHero');
     hero.innerHTML = '<div class="hk">Equity IRR (배당)</div>' +
@@ -1520,6 +1558,9 @@
       ['MW당 연평균 운영비', opexPerMWyr === null ? '—' : f0(opexPerMWyr), 'KRWm/MW/yr']
     ]));
     box.appendChild(kpiGroup('리스크', [
+      ['운영 중 최저 보유현금', k.minCashClose === null ? '—' : feok(k.minCashClose), '억원',
+        '0 미만이면 그 시점에 추가 출자나 브리지 대출 없이는 성립하지 않는 구조입니다 — 그 상태의 배당·FCFE IRR은 과대평가된 값입니다',
+        kpiTone(k.minCashClose, 'neg')],
       ['최소 DSCR(연 합산)', k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3), 'x',
         '연도별 CFADS합/원리금합 중 최솟값 — 1.0 미만이면 그 해 상환재원이 부족했다는 뜻', kpiTone(k.minDSCRAnnual, 'dscr')]
     ]));
@@ -1716,6 +1757,21 @@
     reFundTimer = setTimeout(function () { if (debtAutoSized) autoSizeFunding({ silent: true }); }, 120);
   });
   var reFundTimer = null;
+
+  // 어떤 입력이든 바뀌면 민감도 결과의 유효성을 다시 본다(지문 비교라 값이 같으면 유지)
+  ['input', 'change'].forEach(function (evt) {
+    document.addEventListener(evt, function (e) {
+      if (suppressDirty) return;
+      var t = e.target;
+      if (!t || !t.matches) return;
+      if (t.matches('[data-sens-f]')) return;          // 민감도 표 자체 편집은 제외
+      if (t.matches('[data-k],[data-tr],[data-spend],[data-capex-f],[data-opex-f],[data-sh-name],[data-sh-stake],input[type="checkbox"],select')) {
+        clearTimeout(staleTimer);
+        staleTimer = setTimeout(invalidateSensIfInputChanged, 150);
+      }
+    });
+  });
+  var staleTimer = null;
   $('[data-k="rpsShare"]').addEventListener('input', updateRecWeightState);
   $('[data-k="constructionStart"]').addEventListener('input', updateCodDisplay);
   $('[data-k="constructionMonths"]').addEventListener('input', updateCodDisplay);

@@ -838,6 +838,10 @@
         avgDSCR: dscrs.length ? dscrs.reduce(function (a, b) { return a + b; }, 0) / dscrs.length : null,
         minCumDSCR: annualCumDscrs.length ? Math.min.apply(null, annualCumDscrs) : null,
         minDSCRAnnual: annualDscrs.length ? Math.min.apply(null, annualDscrs) : null,
+        // 운영 중 최저 기말현금 — 음수면 그 시점에 추가 출자/브리지 없이는 성립하지 않는
+        // 구조다. 모델은 현금이 음수여도 계산을 계속하므로(배당만 0으로 막힘) 이 값을
+        // 내보내서 화면·엑셀이 경고할 수 있게 한다.
+        minCashClose: rows.length ? Math.min.apply(null, rows.map(function (r) { return r.cashClose || 0; })) : null,
         totalDividend: totalDividendKRWm,
         totalRevenue: totalRevenueKRWm,
         totalOpex: totalOpexKRWm,

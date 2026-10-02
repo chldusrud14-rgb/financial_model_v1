@@ -2149,6 +2149,10 @@
       irrKv('Investor IRR [%]', CFQ_INVIRR_ROW, '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·이자·배당 회수 (원본 IRR 시트 정의)');
       kvF('최소 단순DSCR(연 합산) [x]', "'CF(Q)'!D" + CFQ_MINDSCR_ROW, FMT_X);
       kvF('최소 누적DSCR [x]', "'CF(Q)'!D" + CFQ_MINCUMDSCR_ROW, FMT_X);
+      /* 운영 중 최저 기말현금 — 음수면 추가 출자/브리지 없이는 성립하지 않는 구조이고
+         그 상태의 Equity IRR 은 과대평가된 값이다. 엑셀에서 입력을 바꿔도 보이게 수식으로. */
+      kvF('운영 중 최저 보유현금 [KRWm]', 'MIN(' + "'CF(Q)'!" + firstC + '17:' + lastC + '17)', FMT_M);
+      putF(ws, 'E' + (r - 1), 'IF(D' + (r - 1) + '>=-1,"운영자금 충족 (OK)","경고: 운영 중 현금 부족 — 추가 출자·브리지가 필요하고 위 Equity IRR 은 과대평가된 값입니다")', '@');
       kvF('총영업수익(전체기간) [KRWm]', "'Revenue'!D" + REV_TOTAL_ROW, FMT_M);
       kvF('총영업비용(전체기간) [KRWm]', "'Opex'!D" + OPEX_TOTAL_ROW, FMT_M);
       kvF('총선순위이자 [KRWm]', "'Debt'!D" + DEBT_INT_TOTAL_ROW, FMT_M);
