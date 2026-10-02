@@ -49,7 +49,7 @@
     { k: 'equityEok', label: '자본금(Equity)', type: 'number', def: 150, unit: '억원', essential: true,
       hint: '전체 출자자의 출자금 합계(Equity 총액)입니다 — 개별 출자자 지분율은 아래 "사업자 구성"에서 나눕니다.' },
     { k: 'equityRatioPct', label: '자기자본비율(선택)', type: 'number', def: '', unit: '%', essential: true, uiOnly: true,
-      hint: '입력하면 총사업비 대비 비율로 자본금을 자동 계산합니다(비워두면 위 자본금 절대값을 그대로 씀). 자본금을 직접 고치면 이 값도 같이 갱신됩니다.' },
+      hint: '총조달 소요액(= 총사업비 + DSRA 적립 + 건설이자) 대비 비율입니다 — 금융권이 보는 기준. 입력하면 자본금과 부채를 이 비율로 자동 산정합니다(비워두면 위 자본금 절대값을 그대로 씀). 자본금을 직접 고치면 이 값도 같이 갱신됩니다.' },
 
     { k: 'degradation', label: '연간 출력저하(Degradation)', type: 'number', def: 0.5, unit: '%/yr', group: '발전소 특성',
       hint: '매년 정액으로 발전량이 이만큼씩 줄어든다고 가정 (복리 아님)' },
@@ -517,6 +517,8 @@
       // 소수 둘째 자리로 자르면 엑셀(항목을 그대로 SUM)과 최대 0.5백만원씩
       // 어긋난다 — 계산에 쓰이는 값이므로 정밀도를 유지한다.
       if (Math.abs((Number(capexEl.value) || 0) - sum) >= 1e-6) {
+        // 총사업비가 바뀌면 소요액도 바뀐다 — 자동 산정 상태면 부채를 다시 맞춘다(아래 setTimeout)
+        if (debtAutoSized && !suppressDirty) setTimeout(function () { if (debtAutoSized) autoSizeFunding({ silent: true }); }, 0);
         capexEl.value = +sum.toFixed(6);
         capexEl.dispatchEvent(new Event('change', { bubbles: true }));
       }
@@ -752,27 +754,122 @@
   }
 
   // 트랜치 조건을 몰라도(또는 대략적인 민감도 확인만 하고 싶을 때) 쓰는
-  // 간편설정 — 부채 전액(총사업비-자본금 추정)을 선순위A 하나로 몰아넣고
+  /* ---------- 조달 규모 자동 산정 ----------
+     조달해야 하는 돈(소요액)은 공사비만이 아니다:
+        소요액 = 총사업비 + DSRA 최초적립액 + 건설이자(IDC)
+     그런데 건설이자는 "얼마를 빌렸는지"로 정해지고, 빌릴 금액은 다시 건설이자를
+     포함한 소요액으로 정해진다 — 서로를 참조하는 순환이라 한 번에 못 구한다.
+     그래서 반복해서 수렴시킨다(엔진의 같은 구조가 2회에 수렴하므로 3회면 충분).
+
+     예전엔 간편설정이 `부채 = 총사업비 - 자본금`으로만 잡아서 DSRA와 건설이자만큼
+     (부남호 294억) 조달이 비었다. 엔진은 약정 한도까지만 인출하므로 그 부족분이
+     조용히 사라져 이자·원리금이 과소계상되고 IRR이 좋게 나왔다
+     (2026-10-02 사용자 발견). 이제 소요액 기준으로 산정하고, 부족하면 생성을 막는다. */
+  var debtAutoSized = false;   // 부채 금액이 자동 산정된 상태인가(사용자가 직접 고치면 해제)
+
+  // 부채 총액을 트랜치에 배분 — 금액이 든 트랜치들의 비율 유지, 전부 0이면 첫 트랜치로
+  function scaleDebt(trs, totalEok) {
+    var sum = trs.reduce(function (a, t) { return a + (Number(t.amountEok) || 0); }, 0);
+    return trs.map(function (t, i) {
+      var amt = sum > 1e-9 ? totalEok * (Number(t.amountEok) || 0) / sum : (i === 0 ? totalEok : 0);
+      return Object.assign({}, t, { amountEok: amt });
+    });
+  }
+
+  // 화면 입력으로 모델을 시험 실행해 건설이자를 얻고, 소요액을 되짚는다
+  function fundingNeedEok(equityEok, debtEok) {
+    var core = readCore();
+    var capex = Number(core.capexEok) || 0;
+    var dsra = Number(core.dsraEok) || 0;
+    var need = capex + dsra, idc = 0;
+    for (var it = 0; it < 3; it++) {
+      var eq = equityEok != null ? equityEok : (Number(core.equityEok) || 0);
+      var debt = debtEok != null ? debtEok : Math.max(0, need - eq);
+      var probe;
+      try {
+        probe = M.computeModel(Object.assign({}, core, {
+          ppy: 4, equityOrder: 1, spendCurve: readSpendCurve(),
+          equityEok: eq, taxMode: 1, localSurtaxRate: 10,
+          tariffTracks: buildTariffTracks(core),
+          tranches: scaleDebt(readTranches(), debt)
+        }));
+      } catch (e) { break; }
+      idc = (probe.idc || 0) / 100;
+      var next = capex + dsra + idc;
+      var done = Math.abs(next - need) < 1e-6;
+      need = next;
+      if (done) break;
+    }
+    return { need: need, idcEok: idc, capexEok: capex, dsraEok: dsra };
+  }
+
+  /* 조달을 소요액에 맞춘다 — 자기자본비율을 고정하고 자본금·부채를 같이 늘린다.
+     비율 칸이 비어 있으면 (현재 자본금 ÷ 소요액)을 비율로 보고 유지한다. */
+  function autoSizeFunding(opts) {
+    var ratioEl = $('[data-k="equityRatioPct"]'), eqEl = $('[data-k="equityEok"]');
+    var f = fundingNeedEok(null, null);
+    var ratio = (ratioEl && ratioEl.value !== '') ? Number(ratioEl.value) / 100 : null;
+    if (ratio == null) {
+      var eqNow = Number(eqEl.value) || 0;
+      ratio = f.need > 0 ? eqNow / f.need : 0;
+    }
+    // 자본금이 바뀌면 인출 순서 때문에 건설이자도 조금 움직인다 — 한 번 더 되짚는다
+    var f2 = fundingNeedEok(f.need * ratio, null);
+    var eq = f2.need * ratio;
+    var debt = Math.max(0, f2.need - eq);
+    suppressDirty = true;
+    try {
+      setVal('[data-k="equityEok"]', +eq.toFixed(2));
+      if (ratioEl) ratioEl.value = (ratio * 100).toFixed(2);
+      var scaled = scaleDebt(readTranches(), debt);
+      TRANCHES.forEach(function (tr, i) {
+        setVal('input[data-tr="' + tr.key + '"][data-f="amountEok"]', +scaled[i].amountEok.toFixed(5));
+      });
+    } finally { suppressDirty = false; }
+    debtAutoSized = true;
+    if (usingPreset) usingPreset = false;
+    if (!opts || !opts.silent) {
+      toast('조달을 소요액 ' + f0(f2.need) + '억원(총사업비 ' + f0(f2.capexEok) + ' + DSRA ' +
+        f0(f2.dsraEok) + ' + 건설이자 ' + f0(f2.idcEok) + ')에 맞췄습니다 — 자기자본 ' + f0(eq) +
+        '억(' + (ratio * 100).toFixed(1) + '%) · 부채 ' + f0(debt) + '억');
+    }
+    return { need: f2.need, equityEok: eq, debtEok: debt };
+  }
+
+  // 트랜치 표준조건(순서·금리·거치·상환·방식)만 세팅 — 금액은 건드리지 않는다
+  function applyTrancheStdTerms(std) {
+    suppressDirty = true;
+    try {
+      TRANCHES.forEach(function (tr) {
+        setVal('input[data-tr="' + tr.key + '"][data-f="order"]', 1);
+        setVal('input[data-tr="' + tr.key + '"][data-f="rateC"]', std.rateC);
+        setVal('input[data-tr="' + tr.key + '"][data-f="rateO"]', std.rateO);
+        setVal('input[data-tr="' + tr.key + '"][data-f="graceYears"]', std.graceYears);
+        setVal('input[data-tr="' + tr.key + '"][data-f="repayYears"]', std.repayYears);
+        setVal('select[data-tr="' + tr.key + '"]', std.method);
+      });
+    } finally { suppressDirty = false; }
+  }
+
+  // 간편설정 — 부채 전액(소요액-자본금)을 선순위A 하나로 몰아넣고
   // 나머지는 0으로 비워서 표준적인 조건(5.5%/5.5%, 거치2년, 상환15년,
   // 원금균등)으로 즉시 계산 가능하게 만든다. 스프레드곡선의
   // "균등분배로 재설정"과 같은 성격의 단순화 버튼.
   function quickFillTranches() {
-    var capex = Number($('[data-k="capexEok"]').value) || 0;
-    var equity = Number($('[data-k="equityEok"]').value) || 0;
-    var debt = Math.max(0, capex - equity);
     var std = { rateC: 5.5, rateO: 5.5, graceYears: 2, repayYears: 15, method: 1 };
-    TRANCHES.forEach(function (tr, idx) {
-      var amt = idx === 0 ? debt : 0;
-      setVal('input[data-tr="' + tr.key + '"][data-f="amountEok"]', amt);
-      setVal('input[data-tr="' + tr.key + '"][data-f="order"]', 1);
-      setVal('input[data-tr="' + tr.key + '"][data-f="rateC"]', std.rateC);
-      setVal('input[data-tr="' + tr.key + '"][data-f="rateO"]', std.rateO);
-      setVal('input[data-tr="' + tr.key + '"][data-f="graceYears"]', std.graceYears);
-      setVal('input[data-tr="' + tr.key + '"][data-f="repayYears"]', std.repayYears);
-      setVal('select[data-tr="' + tr.key + '"]', std.method);
-    });
+    // 금리·거치·상환이 건설이자(=소요액)에 영향을 주므로 표준조건을 먼저 깐다
+    applyTrancheStdTerms(std);
+    var r = autoSizeFunding({ silent: true });
+    suppressDirty = true;
+    try {
+      TRANCHES.forEach(function (tr, idx) {
+        setVal('input[data-tr="' + tr.key + '"][data-f="amountEok"]', idx === 0 ? +r.debtEok.toFixed(5) : 0);
+      });
+    } finally { suppressDirty = false; }
     if (usingPreset) { usingPreset = false; }
-    toast('부채 전액(' + f0(debt) + '억원 추정)을 선순위A 하나로 단순화했습니다 — 필요하면 표에서 직접 조정하세요');
+    debtAutoSized = true;
+    toast('부채 ' + f0(r.debtEok) + '억원(소요액 ' + f0(r.need) + '억 − 자기자본 ' + f0(r.equityEok) +
+      '억)을 선순위A 하나로 단순화했습니다 — 소요액에는 DSRA·건설이자가 포함됩니다');
   }
 
   /* ---------- 사업자(출자자) 구성 ----------
@@ -1119,11 +1216,17 @@
   function syncEquityRatio(fromRatio) {
     var capexEl = $('[data-k="capexEok"]'), eqEl = $('[data-k="equityEok"]'), ratioEl = $('[data-k="equityRatioPct"]');
     if (!capexEl || !eqEl || !ratioEl) return;
-    var capex = Number(capexEl.value) || 0;
+    // 비율의 기준은 총사업비가 아니라 **총조달 소요액**(공사비 + DSRA + 건설이자)이다.
+    // 금융권이 이 기준으로 보고, 조달을 여기 맞춰야 부족분이 안 생긴다.
+    var need = fundingNeedEok(null, null).need;
+    if (need <= 0) return;
     if (fromRatio) {
-      if (ratioEl.value !== '' && capex > 0) eqEl.value = (capex * Number(ratioEl.value) / 100).toFixed(2);
+      if (ratioEl.value !== '') {
+        eqEl.value = (need * Number(ratioEl.value) / 100).toFixed(2);
+        if (debtAutoSized) autoSizeFunding({ silent: true });
+      }
     } else {
-      if (capex > 0) ratioEl.value = (Number(eqEl.value) / capex * 100).toFixed(2);
+      ratioEl.value = (Number(eqEl.value) / need * 100).toFixed(2);
     }
   }
   function readTranches() {
@@ -1324,6 +1427,31 @@
     return wrap;
   }
 
+  /* 조달 부족 안내 — 결과 자리에 띄우고 "조달 맞추고 다시 생성" 버튼을 준다. */
+  function showFundingBlock(probe) {
+    var short = probe.con.unfunded / 100;                                     // 억원
+    var need = probe.con.needTotal / 100;
+    var funded = probe.con.drawn.reduce(function (a, b) { return a + b; }, 0) / 100;
+    var box = $('#kpis');
+    box.innerHTML = '';
+    var w = el('div', 'fundErr');
+    w.appendChild(el('div', 'fundErrT', '조달이 ' + f0(short) + '억원 부족해서 생성하지 않았습니다'));
+    w.appendChild(el('div', 'fundErrB',
+      '조달해야 하는 돈(소요액)은 총사업비만이 아니라 DSRA 적립액과 건설이자까지 포함합니다. ' +
+      '지금은 소요액 ' + f0(need) + '억원 중 ' + f0(funded) + '억원만 조달됩니다(자본금 + 트랜치 약정). ' +
+      '이대로 계산하면 못 빌린 돈이 공짜로 들어온 셈이 되어 이자가 적게 잡히고 수익률이 실제보다 좋게 나옵니다.'));
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn'; btn.textContent = '조달 맞추고 다시 생성';
+    btn.addEventListener('click', function () { autoSizeFunding(); run(); });
+    w.appendChild(btn);
+    w.appendChild(el('div', 'fundErrB', '직접 맞추시려면 트랜치 금액이나 자기자본을 ' + f0(short) + '억원만큼 늘리세요.'));
+    box.appendChild(w);
+    $('#xls').disabled = true;
+    $('#metaNote').textContent = '';
+    $('#shResults').innerHTML = '';
+    toast('조달 부족 ' + f0(short) + '억원 — 생성을 멈췄습니다');
+  }
+
   function renderKPIs() {
     var k = model.kpi;
     var capMW = model.inp.capacityMW;
@@ -1436,7 +1564,16 @@
     // 표시용 계산이라 원본 검증치(periodOverrides 등)와는 독립적이다.
     inp = Object.assign({}, inp, { shareholders: readShareholders() });
     try {
-      model = M.computeModel(inp);
+      var probe = M.computeModel(inp);
+      /* 조달 부족(약정 < 소요액)이면 결과를 내지 않는다.
+         이 상태로 계산하면 못 빌린 돈이 공짜로 조달된 셈이 되어 이자·원리금이
+         과소계상되고 IRR이 과대평가된다 — 경고만 띄우면 그대로 보고까지 흘러가므로
+         아예 막고, 한 번에 맞추는 버튼을 준다 (2026-10-02). */
+      if (probe.con && probe.con.unfunded > 1) {
+        showFundingBlock(probe);
+        return;
+      }
+      model = probe;
       // 엑셀에 넣는 '다시 열기' 링크는 지금 화면이 아니라 이 결과를 만든 입력을 가리켜야 한다
       // (생성 뒤 입력을 고치고 다운로드하는 경우). 생성 시점의 상태를 잡아 둔다.
       try { lastRunState = snapshotState(); } catch (e) { lastRunState = null; }
@@ -1523,6 +1660,27 @@
   updateRecWeightState();
   updateCodDisplay();
   $('#trQuick').addEventListener('click', quickFillTranches);
+
+  /* 조달 자동 맞춤 연동.
+     · 트랜치 금액을 사람이 직접 고치면 그 값을 존중하고 자동 산정을 끈다.
+     · 자동 산정 상태에서 소요액에 영향 주는 입력(총사업비·DSRA·공사기간·지출곡선·
+       건설금리)이 바뀌면 부채를 다시 맞춘다 — 안 그러면 총사업비만 올리고
+       부채는 그대로여서 조달이 부족해진다. */
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (!t || !t.matches) return;
+    if (t.matches('input[data-tr][data-f="amountEok"]') && !suppressDirty) { debtAutoSized = false; return; }
+    if (!debtAutoSized || suppressDirty) return;
+    var k = t.getAttribute('data-k');
+    var affects = k === 'capexEok' || k === 'dsraEok' || k === 'constructionMonths' ||
+      k === 'constructionStart' || k === 'equityEok' || k === 'equityRatioPct';
+    var isRate = t.matches('input[data-tr][data-f="rateC"]');
+    var isSpend = t.matches('[data-spend]');
+    if (!affects && !isRate && !isSpend) return;
+    clearTimeout(reFundTimer);
+    reFundTimer = setTimeout(function () { if (debtAutoSized) autoSizeFunding({ silent: true }); }, 120);
+  });
+  var reFundTimer = null;
   $('[data-k="rpsShare"]').addEventListener('input', updateRecWeightState);
   $('[data-k="constructionStart"]').addEventListener('input', updateCodDisplay);
   $('[data-k="constructionMonths"]').addEventListener('input', updateCodDisplay);

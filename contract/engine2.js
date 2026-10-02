@@ -155,6 +155,10 @@
 
       var orders = srcs.map(function (s) { return s.order; })
         .filter(function (v, i, a) { return a.indexOf(v) === i; }).sort(function (a, b) { return a - b; });
+      // 소요액을 자본금·트랜치 약정으로 다 못 채우면 그 분기 부족분이 남는다.
+      // 예전엔 조용히 버려서(= 공짜로 조달된 셈) 이자·원리금이 과소계상되고
+      // IRR이 좋게 나왔다. 합계를 내보내서 화면이 생성을 막을 수 있게 한다.
+      var unfunded = 0, needTot = 0;
 
       for (var pi = 0; pi <= codIdx; pi++) {
         // 1) 기초잔액 기준 건설이자 (자본화하지 않음)
@@ -166,6 +170,7 @@
         });
         // 2) 소요액 = 공사비 + 당기 건설이자
         var remain = need[pi] + idcThis;
+        needTot += remain;
         // 3) 순서대로 인출
         for (var oi = 0; oi < orders.length && remain > 1e-9; oi++) {
           var grp = [];
@@ -180,13 +185,15 @@
           });
           remain -= take;
         }
+        if (remain > 1e-6) unfunded += remain;
         // 4) 기말인출 → 다음기 기초잔액
         srcs.forEach(function (s, si) { openBal[si] += draws[si][pi]; });
       }
 
       var newIdc = 0;
       idc.forEach(function (a) { a.forEach(function (v) { newIdc += v; }); });
-      res = { srcs: srcs, draws: draws, idc: idc, curve: curve, conPs: conPs, codIdx: codIdx, drawn: drawn };
+      res = { srcs: srcs, draws: draws, idc: idc, curve: curve, conPs: conPs, codIdx: codIdx, drawn: drawn,
+        needTotal: needTot, unfunded: unfunded };
       if (Math.abs(newIdc - idcTot) < 1e-7) { idcTot = newIdc; break; }
       idcTot = newIdc;
       capex = inp.capexEok * 100;   // 공사비는 고정, 건설이자는 need에 별도 가산

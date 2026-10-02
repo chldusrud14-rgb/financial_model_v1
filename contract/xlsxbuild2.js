@@ -659,6 +659,28 @@
       r++;
       put(ws, 'B' + r, '총사업비(건설이자 제외)[KRWm]'); putF(ws, 'C' + r, IN + IN_ADDR.capexEok + '*100', FMT_M); r++;
 
+      /* 조달 검증 — 소요액(공사비 + DSRA + 건설이자)을 자본금·트랜치 약정으로 다 덮는가.
+         화면은 부족하면 생성을 막지만, 엑셀에서는 사용자가 직접 숫자를 고치므로
+         여기서도 수식으로 보여야 한다. 부족하면 못 빌린 돈이 공짜로 조달된 셈이 되어
+         이자가 과소계상된다(2026-10-02 사용자 발견). */
+      var FUND_NEED_ADDR = 'C' + r;
+      put(ws, 'B' + r, '총조달 소요액[KRWm] (= 총사업비 + DSRA + 건설이자)');
+      DEFERRED.push(function () {
+        putF(ws, FUND_NEED_ADDR, IN + IN_ADDR.capexEok + '*100+' + IN + IN_ADDR.dsraEok +
+          "*100+'Debt'!D" + DEBT_IDC_TOTAL_ROW, FMT_M);
+      });
+      r++;
+      var FUND_SRC_ADDR = 'C' + r;
+      put(ws, 'B' + r, '조달 약정 합계[KRWm] (= 자본금 + 트랜치 약정)');
+      putF(ws, FUND_SRC_ADDR, IN + IN_ADDR.equityEok + '*100' +
+        inp.tranches.map(function (t, ti) { return '+' + IN + IN_ADDR.tranche[ti].amount + '*100'; }).join(''), FMT_M);
+      r++;
+      put(ws, 'B' + r, '조달 과부족[KRWm] (조달 − 소요, 0 이상이어야 함)', null, { bold: true });
+      putF(ws, 'C' + r, FUND_SRC_ADDR + '-' + FUND_NEED_ADDR, FMT_M, { bold: true });
+      putF(ws, 'E' + r, 'IF(' + FUND_SRC_ADDR + '-' + FUND_NEED_ADDR +
+        '>=-1,"조달 충족 (OK)","경고: 조달 부족 — 못 빌린 돈이 공짜로 조달된 셈이 되어 이자가 과소계상됩니다")', '@');
+      r++;
+
 
       // 총사업비 세부내역 — 화면에서 항목별로 입력했으면 실제 금액, 합계만
       // 입력했으면 항목명만(금액은 빈칸) 표시한다. 어느 쪽이든 항목
