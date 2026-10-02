@@ -3298,7 +3298,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         // 마지막 정산이라 상법상 이익배당 한도가 아니라 청산/자본반환 성격).
         if (i === lastOp) { div = Math.max(0, avail); pendingDiv = 0; }
         r.dividend = div;
-        cashBal = avail - div;
+        /* 현금 잔액은 음수가 될 수 없다 — 현실에 없는 상태다.
+           원리금·운영비를 영업현금으로 못 덮는 분기에는 실제 사업이라면 주주 추가 출자나
+           운전자금 대출이 들어간다. 예전엔 그냥 음수로 뒀고(= 있지도 않은 돈으로 버팀)
+           그 뒤 배당·IRR 이 전부 과대평가됐다(2026-10-02 사용자 지적).
+           재무모델 표준대로 **부족분을 주주 추가 출자로 자동 조달**하고, 그 금액을
+           자기자본 유출로 반영한다(아래 eqFlows/divFlows/investorFlows). */
+        var closing = avail - div;
+        r.equityInject = closing < -1e-9 ? -closing : 0;
+        cashBal = closing + r.equityInject;
         r.cashClose = cashBal;
         // CF(Y)!row14 "배당&유상감자 후 잔액" = 그 해 기초현금(3월 분기
         // 자체의 영업현금흐름은 안 더함) − 그 해 3월 배당. 부채 완제 후
@@ -3331,9 +3339,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       con.conPs.forEach(function (cp, ci) { if (cp.n === i) capOut = capex * con.curve[ci]; });
       projFlows.push(rows[i].projectFcf - capOut);
       preFlows.push(ps[i].ebitda - rows[i].decom - rows[i].agentFee + rows[i].wc - capOut);
-      eqFlows.push(rows[i].fcfe - con.draws[0][i]);
-      eqFlowsPre.push(rows[i].fcfePre - con.draws[0][i]);
-      divFlows.push(rows[i].dividend - con.draws[0][i]);
+      // 운전자금 부족분 추가 출자도 주주가 넣는 돈이므로 자기자본 유출에 포함한다
+      var inj = rows[i].equityInject || 0;
+      eqFlows.push(rows[i].fcfe - con.draws[0][i] - inj);
+      eqFlowsPre.push(rows[i].fcfePre - con.draws[0][i] - inj);
+      divFlows.push(rows[i].dividend - con.draws[0][i] - inj);
 
       // Investor IRR: 자본+부채 조달 전체(유출) vs 건설이자·원리금·배당
       // 전체(유입) — `IRR!row33~70`으로 직접 대조해서 확인한 정의. 건설이자
@@ -3343,7 +3353,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       var debtDraw = 0;
       con.srcs.forEach(function (s, si) { if (!s.equity) debtDraw += con.draws[si][i]; });
       investorFlows.push(
-        -con.draws[0][i] - debtDraw +
+        -inj - con.draws[0][i] - debtDraw +
         rows[i].interest + rows[i].principal + rows[i].dividend +
         (i === con.codIdx ? con.idcTotal : 0)
       );
@@ -3428,6 +3438,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         // 구조다. 모델은 현금이 음수여도 계산을 계속하므로(배당만 0으로 막힘) 이 값을
         // 내보내서 화면·엑셀이 경고할 수 있게 한다.
         minCashClose: rows.length ? Math.min.apply(null, rows.map(function (r) { return r.cashClose || 0; })) : null,
+        // 운전자금 부족분으로 들어간 추가 출자 합계 — 0 이 아니면 약정 자기자본만으로는
+        // 사업이 안 돌아간다는 뜻이고, 위 Equity IRR 은 이 돈까지 넣고 계산된 값이다.
+        totalEquityInject: rows.reduce(function (a, r) { return a + (r.equityInject || 0); }, 0),
         totalDividend: totalDividendKRWm,
         totalRevenue: totalRevenueKRWm,
         totalOpex: totalOpexKRWm,
@@ -3695,7 +3708,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     var DEFERRED = [];
     var CFQ_MINDSCR_ROW = null, CFQ_MINCUMDSCR_ROW = null;
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
-    var CFQ_EQFLOWPRE_ROW = null, CFQ_EQIRRPRE_ROW = null;
+    var CFQ_EQFLOWPRE_ROW = null, CFQ_EQIRRPRE_ROW = null, CFQ_INJ_ROW = 25;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
     var CFQ_PROJFLOWPRE_ROW = null, CFQ_PROJIRRPRE_ROW = null;
     var DEBT_CAPEX_SPEND_ROW = null; // Debt 의 '공사비 지출' 행 — CF(Q) IRR용 현금흐름이 참조
@@ -5192,6 +5205,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       // "그 해 원리금상환재원(현금기준)" 둘 다 이 값을 참조하므로 행 하나로
       // 공유한다.
       var taxAdjRow = 19;
+      var INJ_ROW = 25;          // 추가 출자(운전자금 부족분) 행 — 19~24는 내부용 행이 이미 쓴다
       label(ws, taxAdjRow, '(세금 현금조정, 내부용)', '[KRWm]');
       for (var n = 0; n < N; n++) {
         var ovr0 = ovrByEnd[periods[n].endStr];
@@ -5333,8 +5347,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         putF(ws, pc(n) + 16, divF, FMT_M, { bold: true });
       }
       putF(ws, 'D16', sumFormula(16), FMT_M, { bold: true });
+      /* 추가 출자(운전자금 부족분) — 현금 잔액은 음수가 될 수 없다.
+         영업현금이 원리금을 못 덮는 분기에는 주주가 부족분을 넣는 것으로 본다(엔진 r.equityInject).
+         기말현금 = 가용현금 − 배당 + 추가출자 → 항상 0 이상. 자기자본 현금흐름(아래 Equity/
+         Investor 행)에서 이 금액을 유출로 뺀다. */
+      label(ws, INJ_ROW, '추가 출자(운전자금 부족분)', '[KRWm]', { bold: true, fill: SUB_FILL });
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + INJ_ROW, 'MAX(0,-(' + pc(n) + availRow + '-' + pc(n) + '16))', FMT_M);
+      }
+      putF(ws, 'D' + INJ_ROW, sumFormula(INJ_ROW), FMT_M, { bold: true });
       label(ws, 17, '기말현금', '[KRWm]');
-      for (var n = 0; n < N; n++) putF(ws, pc(n) + 17, pc(n) + availRow + '-' + pc(n) + '16', FMT_M, { noSum: true });
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + 17, pc(n) + availRow + '-' + pc(n) + '16+' + pc(n) + INJ_ROW, FMT_M, { noSum: true });
+      }
 
       // 연도별 DSCR·배당 게이트 요약 — "단순DSCR(연 합산)"/"누적DSCR"은 분기
       // 비율이 아니라 연 단위 지표(Report!row233 방식)이고, 배당 결의(decided)/
@@ -5493,19 +5518,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       r++;
       CFQ_EQFLOW_ROW = r;
       label(ws, r, 'Equity 현금흐름(FCFE 기준)', '[KRWm]');
-      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '13-' + pc(n) + equityDrawRow, FMT_M);
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '13-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW, FMT_M);
       r++;
       // 세전 FCFE = FCFE + FCFE 에서 실제로 빠진 법인세(엔진 r.taxEffective = 발생주의 세금 − 세금 현금조정).
       // 화면의 'Equity IRR (FCFE) 세전' 과 같은 정의.
       CFQ_EQFLOWPRE_ROW = r;
       label(ws, r, 'Equity 현금흐름(FCFE 세전)', '[KRWm]');
       for (var n = 0; n < N; n++) {
-        putF(ws, pc(n) + r, pc(n) + "13-'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + '-' + pc(n) + taxAdjRow + '-' + pc(n) + equityDrawRow, FMT_M);
+        putF(ws, pc(n) + r, pc(n) + "13-'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + '-' + pc(n) + taxAdjRow + '-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW, FMT_M);
       }
       r++;
       CFQ_DIVFLOW_ROW = r;
       label(ws, r, 'Equity 현금흐름(배당 기준)', '[KRWm]');
-      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '16-' + pc(n) + equityDrawRow, FMT_M);
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '16-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW, FMT_M);
       r++;
       CFQ_INVFLOW_ROW = r;
       label(ws, r, 'Investor 현금흐름', '[KRWm]');
@@ -5517,7 +5542,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         }).join('+') || '0';
         var idcTermF = (n === model.con.codIdx) ? ("+'Debt'!D" + DEBT_IDC_TOTAL_ROW) : '';
         putF(ws, pc(n) + r,
-          '-' + pc(n) + equityDrawRow + '-(' + debtDrawF + ")+'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW + "+'Debt'!" + pc(n) + DEBT_PRIN_TOTAL_ROW + '+' + pc(n) + '16' + idcTermF,
+          '-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW + '-(' + debtDrawF + ")+'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW + "+'Debt'!" + pc(n) + DEBT_PRIN_TOTAL_ROW + '+' + pc(n) + '16' + idcTermF,
           FMT_M);
       }
       r += 2;
@@ -5592,14 +5617,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       irrKv('Equity IRR (FCFE) 세전 [%]', CFQ_EQIRRPRE_ROW, '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때, 법인세 전');
       irrKv('Equity IRR (FCFE) 세후 [%]', CFQ_EQIRR_ROW, '위와 같되 법인세 후 — 배당 제한(DSCR·최소현금·배당가능이익)이 없다고 본 값');
       irrKv('Project IRR 세전 [%]', CFQ_PROJIRRPRE_ROW, '차입 없이 사업 전체(총사업비 vs 영업현금흐름)의 수익률, 법인세 전');
-      irrKv('Project IRR 세후 [%]', CFQ_PROJIRR_ROW, '위와 같되 법인세 후');
+      irrKv('Project IRR 세후 [%]', CFQ_PROJIRR_ROW,
+        '실제 납부 법인세 기준 — 이자 손금(차입으로 줄어든 세금)이 반영돼 있어 Equity IRR 세후와 직접 비교하면 안 됩니다. 레버리지 효과는 세전끼리 비교하세요');
       irrKv('Investor IRR [%]', CFQ_INVIRR_ROW, '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·이자·배당 회수 (원본 IRR 시트 정의)');
       kvF('최소 단순DSCR(연 합산) [x]', "'CF(Q)'!D" + CFQ_MINDSCR_ROW, FMT_X);
       kvF('최소 누적DSCR [x]', "'CF(Q)'!D" + CFQ_MINCUMDSCR_ROW, FMT_X);
       /* 운영 중 최저 기말현금 — 음수면 추가 출자/브리지 없이는 성립하지 않는 구조이고
          그 상태의 Equity IRR 은 과대평가된 값이다. 엑셀에서 입력을 바꿔도 보이게 수식으로. */
+      kvF('운전자금 추가 출자 합계 [KRWm]', "'CF(Q)'!D" + CFQ_INJ_ROW, FMT_M);
+      putF(ws, 'E' + (r - 1), 'IF(D' + (r - 1) + '<=1,"추가 출자 없음 (OK)","경고: 영업현금으로 원리금을 못 덮는 분기가 있어 주주가 이 금액을 더 넣어야 합니다 — 위 Equity IRR 에 이미 유출로 반영됨")', '@');
       kvF('운영 중 최저 보유현금 [KRWm]', 'MIN(' + "'CF(Q)'!" + firstC + '17:' + lastC + '17)', FMT_M);
-      putF(ws, 'E' + (r - 1), 'IF(D' + (r - 1) + '>=-1,"운영자금 충족 (OK)","경고: 운영 중 현금 부족 — 추가 출자·브리지가 필요하고 위 Equity IRR 은 과대평가된 값입니다")', '@');
+      ws.getCell('E' + (r - 1)).value = '추가 출자를 반영한 뒤의 최저 잔액 — 0 이상이어야 정상';
+      ws.getCell('E' + (r - 1)).font = { name: FONT, size: 8, color: { argb: 'FF6B7B76' } };
       kvF('총영업수익(전체기간) [KRWm]', "'Revenue'!D" + REV_TOTAL_ROW, FMT_M);
       kvF('총영업비용(전체기간) [KRWm]', "'Opex'!D" + OPEX_TOTAL_ROW, FMT_M);
       kvF('총선순위이자 [KRWm]', "'Debt'!D" + DEBT_INT_TOTAL_ROW, FMT_M);
@@ -5614,14 +5643,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       (function () {
         var ws = wb.addWorksheet('민감도', { properties: { tabColor: { argb: 'FF14483A' } } });
         ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 18;
-        for (var ci = 0; ci < 10; ci++) ws.getColumn(3 + ci).width = 14;
+        for (var ci = 0; ci < 11; ci++) ws.getColumn(3 + ci).width = 14;
+        ws.getColumn(14).width = 10;   // 판정 등급
+        ws.getColumn(15).width = 72;   // 사유(평이한 설명)
         title(ws, '민감도 분석 — 시나리오별 핵심 지표 비교');
         var r = 4;
         ws.getCell('B' + r).value = '조달(자기자본·부채)은 시나리오별 소요액(총사업비+DSRA+건설이자)에 맞춰 재산정하며 자기자본비율은 기준과 동일하게 유지합니다. 판매단가/총투자비/운영비/금리는 델타가 아니라 절대값 — 빈 칸이면 그 시나리오는 "사업 기본 가정"에 입력한 값을 그대로 쓴다. Base(현재 입력값)는 시나리오를 하나도 안 바꾼 기준선. 화면(생성기)에서 지정한 시나리오를 각각 독립적으로 재계산한 값 — 라이브 수식이 아니라 스냅샷임.';
         ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FF6B7B76' } };
         r += 2;
         var heads = ['시나리오', '판매단가[원/kWh]', '총사업비[억원]', '운영비[억원]', '금리[%]',
-          'Equity IRR(배당)', 'Equity IRR(FCFE)', 'Project IRR', '최소DSCR', 'NPV[억원]', '투자배수[x]'];
+          'Equity IRR(배당)', 'Equity IRR(FCFE)', 'Project IRR', '최소DSCR', '운영 중 최저현금[KRWm]', 'NPV[억원]', '투자배수[x]', '판정', '사유'];
         heads.forEach(function (h, idx) {
           var c = ws.getCell(colLetter(2 + idx) + r);
           c.value = h;
@@ -5646,9 +5677,38 @@ https://github.com/nodeca/pako/blob/main/LICENSE
             put(ws, 'H' + r, k.equityIRR, FMT_P);
             put(ws, 'I' + r, k.projectIRR, FMT_P);
             put(ws, 'J' + r, k.minDSCRAnnual, FMT_X);
-            put(ws, 'K' + r, k.npv / 100, '#,##0');
-            put(ws, 'L' + r, k.equityMultiple, '0.00');
+            put(ws, 'K' + r, k.minCashClose, FMT_M);
+            put(ws, 'L' + r, k.npv / 100, '#,##0');
+            put(ws, 'M' + r, k.equityMultiple, '0.00');
+            /* 판정 — 화면(app2.js sensVerdictParts)이 만든 "등급 + 평이한 사유"를 그대로 싣는다.
+               거래처가 엑셀만 받아도 숫자의 의미를 알 수 있어야 한다. */
+            var vv = row.verdict || { grade: '', why: '' };
+            put(ws, 'N' + r, vv.grade || '', '@');
+            put(ws, 'O' + r, vv.why || '', '@');
+            ws.getCell('O' + r).alignment = { wrapText: true, vertical: 'top' };
+            var gc = vv.grade === '적격' ? 'FF2E7D62' : (vv.grade === '조건부' ? 'FFC2703B' : 'FFB4483E');
+            ws.getCell('N' + r).font = { name: FONT, size: 10, bold: true, color: { argb: gc } };
+            ws.getCell('O' + r).font = { name: FONT, size: 9, color: { argb: 'FF3C4B45' } };
           }
+          r++;
+        });
+        /* 범례 — 판정 기준을 평이한 말로. 이해관계자가 이 시트만 보고도 이해해야 한다. */
+        r += 1;
+        var LEG = [
+          ['적격', 'DSCR 1.2 이상 · 운영 중 자금 부족 없음 · NPV 0 이상 — 금융 조달이 가능하고 투자 기준을 충족합니다.'],
+          ['조건부', 'DSCR 1.0~1.2 — 원리금은 갚지만 여유가 금융권 통상 기준(1.2)에 못 미칩니다. 상환기간 연장·자기자본 확대 등으로 보완이 필요합니다.'],
+          ['부적격', '다음 중 하나라도 해당: ① DSCR 1.0 미만 = 그 해 영업현금으로 원리금을 못 갚음 ② 운영 중 보유현금 음수 = 그 시점에 추가 출자·브리지가 필요하고, 그 돈을 넣지 않은 상태라 같은 행의 수익률은 과대평가된 값 ③ NPV 음수 = 요구수익률(할인율) 기준으로 투자가치가 없음'],
+        ];
+        ws.getCell('B' + r).value = '판정 기준';
+        ws.getCell('B' + r).font = { name: FONT, size: 10, bold: true, color: { argb: 'FF14483A' } };
+        r++;
+        LEG.forEach(function (g) {
+          ws.getCell('B' + r).value = g[0];
+          ws.getCell('B' + r).font = { name: FONT, size: 9, bold: true, color: { argb: g[0] === '적격' ? 'FF2E7D62' : (g[0] === '조건부' ? 'FFC2703B' : 'FFB4483E') } };
+          ws.getCell('C' + r).value = g[1];
+          ws.getCell('C' + r).font = { name: FONT, size: 9, color: { argb: 'FF3C4B45' } };
+          ws.getCell('C' + r).alignment = { wrapText: true, vertical: 'top' };
+          ws.getRow(r).height = 28;
           r++;
         });
       })();
@@ -7330,7 +7390,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       try {
         var scInp = sizeFundingForInput(applyScenario(baseInp, sc), baseRatio);
         var m = M.computeModel(scInp);
-        return { name: sc.name, sc: sc, kpi: m.kpi,
+        return { name: sc.name, sc: sc, kpi: m.kpi, verdict: sensVerdictParts(m.kpi),
           equityEok: scInp.equityEok, debtEok: (scInp.tranches || []).reduce(function (a, t) { return a + (t.amountEok || 0); }, 0) };
       } catch (e) {
         return { name: sc.name, sc: sc, error: e.message };
@@ -7346,17 +7406,48 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     );
   }
 
+  /* 시나리오 판정 — 거래처·이해관계자가 그대로 읽을 수 있게 "등급 + 평이한 사유"로 쓴다.
+     재무 약어만 쓰면(IRR 과대 / NPV 음) 숫자만 보고 "낮지만 되는구나"로 오해한다.
+        적격   : DSCR 1.2 이상 · 운영 중 자금부족 없음 · NPV 0 이상
+        조건부 : 위 중 DSCR 여유만 부족(1.0~1.2)
+        부적격 : 원리금 상환 불가(DSCR<1.0) · 운영 중 자금부족 · 요구수익률 미달(NPV<0)
+     엑셀(xlsxbuild2.js)의 같은 판정 문구와 맞춰 둘 것. */
+  function sensVerdictParts(k) {
+    var why = [], grade = '적격';
+    if (k.minDSCRAnnual !== null && k.minDSCRAnnual < 1) {
+      grade = '부적격';
+      why.push('영업현금으로 원리금 상환 불가 (DSCR ' + k.minDSCRAnnual.toFixed(2) + ', 기준 1.0 이상)');
+    } else if (k.minDSCRAnnual !== null && k.minDSCRAnnual < 1.2) {
+      grade = '조건부';
+      why.push('원리금 상환 여유 부족 (DSCR ' + k.minDSCRAnnual.toFixed(2) + ', 금융권 통상 1.2 이상)');
+    }
+    if (k.totalEquityInject > 1) {
+      grade = '부적격';
+      why.push('운영 중 자금 부족으로 추가 출자 ' + feok(k.totalEquityInject) + '억 필요 (왼쪽 수익률에 이미 반영된 값)');
+    }
+    if (k.npv !== null && k.npv < 0) {
+      grade = '부적격';
+      why.push('요구수익률 미달 — NPV ' + feok(k.npv) + '억');
+    }
+    return { grade: grade, why: why.join(' · ') || '금융 조달 가능·투자 기준 충족' };
+  }
+  function sensVerdict(k) {
+    var v = sensVerdictParts(k);
+    var color = v.grade === '적격' ? 'var(--good)' : (v.grade === '조건부' ? 'var(--warn)' : 'var(--bad)');
+    return '<b style="color:' + color + '">' + v.grade + '</b><div style="color:var(--muted);font-size:10.5px;line-height:1.5">' + v.why + '</div>';
+  }
+
   function renderSensResults(results) {
     var box = $('#sensResults');
     box.innerHTML = '';
     var t = el('table', 'tr');
     t.innerHTML = '<thead><tr><th>시나리오</th><th>Equity IRR(배당)</th><th>Equity IRR(FCFE)</th>' +
-      '<th>Project IRR</th><th>최소DSCR</th><th>NPV(억원)</th><th>투자배수</th></tr></thead>';
+      '<th>Project IRR</th><th>최소DSCR</th><th>최저현금(억)</th><th>NPV(억원)</th><th>투자배수</th><th>판정 · 사유</th></tr></thead>';
     var tb = document.createElement('tbody');
     results.forEach(function (r) {
       var tr = document.createElement('tr');
       if (r.error) {
-        tr.innerHTML = '<td>' + r.name + '</td><td colspan="6" style="color:var(--bad)">계산 실패: ' + r.error + '</td>';
+        tr.innerHTML = '<td>' + r.name + '</td><td colspan="8" style="color:var(--bad)">계산 실패: ' + r.error + '</td>';
       } else {
         var k = r.kpi;
         tr.innerHTML = '<td>' + r.name + '</td>' +
@@ -7364,8 +7455,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           '<td style="text-align:right">' + pct(k.equityIRR) + '%</td>' +
           '<td style="text-align:right">' + pct(k.projectIRR) + '%</td>' +
           '<td style="text-align:right">' + (k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3)) + 'x</td>' +
+          /* 운영 중 최저 보유현금 — 음수면 그 시나리오는 추가 출자·브리지 없이는 성립하지 않고
+             같은 행의 Equity IRR 은 과대평가된 값이다. 표에 안 보이면 놓치게 되므로 같이 싣는다
+             (2026-10-02 Case1 이 -171억인데 표에는 IRR 만 보였다). */
+          '<td style="text-align:right' + (k.minCashClose < -1 ? ';color:var(--bad);font-weight:700' : '') + '">' +
+            (k.minCashClose === null ? '—' : feok(k.minCashClose)) + '</td>' +
           '<td style="text-align:right">' + feok(k.npv) + '</td>' +
-          '<td style="text-align:right">' + fx(k.equityMultiple) + '배</td>';
+          '<td style="text-align:right">' + fx(k.equityMultiple) + '배</td>' +
+          '<td style="font-size:11px">' + sensVerdict(k) + '</td>';
       }
       tb.appendChild(tr);
     });
@@ -7682,13 +7779,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     /* 운영 중 현금 부족 경고. 조달 부족과 달리 "입력 모순"이 아니라 사업성 결과이므로
        계산은 보여주되, 이 상태에서 배당·FCFE IRR 이 과대평가된다는 걸 분명히 알린다
        (모델은 현금이 음수여도 배당만 0으로 막고 계산을 계속한다). */
-    if (k.minCashClose !== null && k.minCashClose < -1) {
+    if (k.totalEquityInject > 1) {
       var cw = el('div', 'cashWarn');
-      cw.appendChild(el('div', 'cashWarnT', '운영 중 보유현금이 ' + feok(Math.abs(k.minCashClose)) + '억원 부족합니다'));
+      cw.appendChild(el('div', 'cashWarnT', '운영 중 자금이 부족해 추가 출자 ' + feok(k.totalEquityInject) + '억원이 들어갔습니다'));
       cw.appendChild(el('div', 'cashWarnB',
-        '영업현금흐름이 원리금을 못 덮는 구간이 있어 현금이 마이너스로 내려갑니다. 실제로는 그 시점에 ' +
-        '추가 출자나 브리지 대출이 필요하고, 그 돈이 반영되지 않았으므로 아래 Equity IRR(배당·FCFE)은 ' +
-        '과대평가된 값입니다. 상환기간·거치기간·자기자본비율을 조정해 최저 현금이 0 이상이 되게 맞추세요.'));
+        '영업현금흐름이 원리금을 못 덮는 분기가 있어, 부족분을 주주 추가 출자로 메우는 것으로 계산했습니다' +
+        '(현금 잔액은 음수가 될 수 없으므로 반드시 누군가 넣어야 하는 돈입니다). 아래 Equity IRR 에는 이 ' +
+        '출자가 유출로 반영돼 있습니다 — 즉 처음 약정한 자기자본만으로는 사업이 돌아가지 않는 구조입니다. ' +
+        '상환기간 연장·자기자본 확대·DSRA 기준 완화로 추가 출자가 0 이 되게 맞추는 것을 권합니다.'));
       box.appendChild(cw);
     }
 
@@ -7705,7 +7803,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%', '', (kpiTone(k.equityIRRPre, 'neg') + ' dim').trim()],
       ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때(배당 제한 없음)', kpiTone(k.equityIRR, 'neg')],
       ['Project IRR 세전', pct(k.projectIRRPre), '%', '', (kpiTone(k.projectIRRPre, 'neg') + ' dim').trim()],
-      ['Project IRR 세후', pct(k.projectIRR), '%', '차입 없이 사업 전체의 수익률', kpiTone(k.projectIRR, 'neg')],
+      ['Project IRR 세후', pct(k.projectIRR), '%', '실제 납부 법인세 기준(이자 손금 반영) — Equity 세후와 직접 비교하지 마세요. 레버리지 효과는 세전끼리 비교', kpiTone(k.projectIRR, 'neg')],
       ['Investor IRR', pct(k.investorIRR), '%', '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·배당 회수', kpiTone(k.investorIRR, 'neg')]
     ]));
     box.appendChild(kpiGroup('사업 규모·수익구조', [
@@ -7717,9 +7815,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       ['MW당 연평균 운영비', opexPerMWyr === null ? '—' : f0(opexPerMWyr), 'KRWm/MW/yr']
     ]));
     box.appendChild(kpiGroup('리스크', [
+      ['운전자금 추가 출자', k.totalEquityInject === undefined ? '—' : feok(k.totalEquityInject), '억원',
+        '영업현금으로 원리금을 못 덮는 분기에 주주가 더 넣어야 하는 돈입니다(현금 잔액은 음수가 될 수 없음). 0 이 아니면 약정 자기자본만으로는 사업이 안 돌아가며, 위 Equity IRR 에는 이 출자가 반영돼 있습니다',
+        k.totalEquityInject > 1 ? 'bad' : ''],
       ['운영 중 최저 보유현금', k.minCashClose === null ? '—' : feok(k.minCashClose), '억원',
-        '0 미만이면 그 시점에 추가 출자나 브리지 대출 없이는 성립하지 않는 구조입니다 — 그 상태의 배당·FCFE IRR은 과대평가된 값입니다',
-        kpiTone(k.minCashClose, 'neg')],
+        '추가 출자를 반영한 뒤의 최저 잔액이라 0 이상입니다', ''],
       ['최소 DSCR(연 합산)', k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3), 'x',
         '연도별 CFADS합/원리금합 중 최솟값 — 1.0 미만이면 그 해 상환재원이 부족했다는 뜻', kpiTone(k.minDSCRAnnual, 'dscr')]
     ]));

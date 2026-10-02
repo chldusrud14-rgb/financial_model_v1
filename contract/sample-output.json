@@ -1831,6 +1831,7 @@
    "fcfePre": 0,
    "cashOpen": 0,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 0,
    "projectFcf": 0
   },
@@ -1870,6 +1871,7 @@
    "fcfePre": 0,
    "cashOpen": 0,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 0,
    "projectFcf": 0
   },
@@ -1909,6 +1911,7 @@
    "fcfePre": 0,
    "cashOpen": 0,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 0,
    "projectFcf": 0
   },
@@ -1948,6 +1951,7 @@
    "fcfePre": 0,
    "cashOpen": 0,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 0,
    "projectFcf": 0
   },
@@ -1987,6 +1991,7 @@
    "fcfePre": 0,
    "cashOpen": 0,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 0,
    "projectFcf": 0
   },
@@ -2026,6 +2031,7 @@
    "fcfePre": 0,
    "cashOpen": 0,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 0,
    "projectFcf": 0
   },
@@ -2065,6 +2071,7 @@
    "fcfePre": 1680.9290000000012,
    "cashOpen": 0,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 1601.3291924148925,
    "projectFcf": 2225.609192414892
   },
@@ -2104,6 +2111,7 @@
    "fcfePre": 2205.5535000000004,
    "cashOpen": 1601.3291924148925,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 3710.788256920765,
    "projectFcf": 3984.219064505872
   },
@@ -2143,6 +2151,7 @@
    "fcfePre": 99.44412500000061,
    "cashOpen": 3710.788256920765,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 3714.1379464266374,
    "projectFcf": 3984.219064505872
   },
@@ -2182,6 +2191,7 @@
    "fcfePre": 128.73724999999985,
    "cashOpen": 3714.1379464266374,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 3746.780760932509,
    "projectFcf": 3984.219064505872
   },
@@ -2221,6 +2231,7 @@
    "fcfePre": 131.56433000000075,
    "cashOpen": 3746.780760932509,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 3789.6155546819596,
    "projectFcf": 3965.11791874945
   },
@@ -2260,6 +2271,7 @@
    "fcfePre": 151.98193250000077,
    "cashOpen": 3789.6155546819596,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 3846.742117840529,
    "projectFcf": 3950.116563158569
   },
@@ -2299,6 +2311,7 @@
    "fcfePre": 181.2750575000008,
    "cashOpen": 3846.742117840529,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 3927.0559773899104,
    "projectFcf": 3944.010734549381
   },
@@ -2338,6 +2351,7 @@
    "fcfePre": 210.56818250000123,
    "cashOpen": 3927.0559773899104,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 4030.5571333301045,
    "projectFcf": 3937.9049059401937
   },
@@ -2377,6 +2391,7 @@
    "fcfePre": 213.33425749999992,
    "cashOpen": 4030.5571333301045,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 4138.097811174028,
    "projectFcf": 3912.651302843924
   },
@@ -2416,6 +2431,7 @@
    "fcfePre": 233.75186000000176,
    "cashOpen": 4138.097811174028,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 4259.907208476275,
    "projectFcf": 3897.6268973022466
   },
@@ -2455,6 +2471,7 @@
    "fcfePre": 263.0449850000015,
    "cashOpen": 4259.907208476275,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 4404.901552889836,
    "projectFcf": 3891.518719413561
   },
@@ -2494,6 +2511,7 @@
    "fcfePre": 292.3381100000016,
    "cashOpen": 4404.901552889836,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 4573.0808444147115,
    "projectFcf": 3885.4105415248755
   },
@@ -2533,6 +2551,7 @@
    "fcfePre": 295.0427529650019,
    "cashOpen": 4573.0808444147115,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 4745.251525536414,
    "projectFcf": 3860.1088061217024
   },
@@ -2572,6 +2591,7 @@
    "fcfePre": 315.4603554650014,
    "cashOpen": 4745.251525536414,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 4931.694457134355,
    "projectFcf": 3845.08793159794
   },
@@ -2611,6 +2631,7 @@
    "fcfePre": 344.75348046500073,
    "cashOpen": 4931.694457134355,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 5141.3205753707425,
    "projectFcf": 3838.9779932363886
   },
@@ -2650,6 +2671,7 @@
    "fcfePre": 374.04660546500133,
    "cashOpen": 5141.3205753707425,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 5374.12988024558,
    "projectFcf": 3832.868054874837
   },
@@ -2689,6 +2711,7 @@
    "fcfePre": 376.68938637075564,
    "cashOpen": 5374.12988024558,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 5610.881986661196,
    "projectFcf": 3807.5177314156153
   },
@@ -2728,6 +2751,7 @@
    "fcfePre": 397.1069888707565,
    "cashOpen": 5610.881986661196,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 5861.909048782064,
    "projectFcf": 3792.4995621208677
   },
@@ -2767,6 +2791,7 @@
    "fcfePre": 426.4001138707564,
    "cashOpen": 5861.909048782064,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 6136.117929172212,
    "projectFcf": 3786.3882553901476
   },
@@ -2806,6 +2831,7 @@
    "fcfePre": 455.6932388707563,
    "cashOpen": 6136.117929172212,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 6433.508627831639,
    "projectFcf": 3780.276948659427
   },
@@ -2845,6 +2871,7 @@
    "fcfePre": 458.27372468285256,
    "cashOpen": 6433.508627831639,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 6734.793120462703,
    "projectFcf": 3754.877617631063
   },
@@ -2884,6 +2911,7 @@
    "fcfePre": 478.6913271828506,
    "cashOpen": 6734.793120462703,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 7050.354708350055,
    "projectFcf": 3739.8615878873534
   },
@@ -2923,6 +2951,7 @@
    "fcfePre": 507.984452182852,
    "cashOpen": 7050.354708350055,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 7389.097020376081,
    "projectFcf": 3733.7491870260255
   },
@@ -2962,6 +2991,7 @@
    "fcfePre": 537.2775771828522,
    "cashOpen": 7389.097020376081,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 7751.0200565407795,
    "projectFcf": 3727.636786164698
   },
@@ -3001,6 +3031,7 @@
    "fcfePre": 539.7953318356319,
    "cashOpen": 7751.0200565407795,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 8116.78748033666,
    "projectFcf": 3702.1880487958806
   },
@@ -3040,6 +3071,7 @@
    "fcfePre": 560.212934335632,
    "cashOpen": 8116.78748033666,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 8496.833734288071,
    "projectFcf": 3687.17375395141
   },
@@ -3079,6 +3111,7 @@
    "fcfePre": 589.5060593356311,
    "cashOpen": 8496.833734288071,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 8900.05981755857,
    "projectFcf": 3681.060458270498
   },
@@ -3118,6 +3151,7 @@
    "fcfePre": 618.7991843356319,
    "cashOpen": 8900.05981755857,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 9326.465730148157,
    "projectFcf": 3674.9471625895867
   },
@@ -3157,6 +3191,7 @@
    "fcfePre": 621.2537687109796,
    "cashOpen": 9326.465730148157,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 9756.666237552567,
    "projectFcf": 3649.4486324044096
   },
@@ -3196,6 +3231,7 @@
    "fcfePre": 641.6713712109811,
    "cashOpen": 9756.666237552567,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 10201.147010461404,
    "projectFcf": 3634.4357729088365
   },
@@ -3235,6 +3271,7 @@
    "fcfePre": 670.9644962109804,
    "cashOpen": 10201.147010461404,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 10668.806867270494,
    "projectFcf": 3628.32173180909
   },
@@ -3274,6 +3311,7 @@
    "fcfePre": 700.2576212109808,
    "cashOpen": 10668.806867270494,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 11159.64580797984,
    "projectFcf": 3622.207690709344
   },
@@ -3313,6 +3351,7 @@
    "fcfePre": 702.6485931169575,
    "cashOpen": 11159.64580797984,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 11654.229171578805,
    "projectFcf": 3596.6589885989642
   },
@@ -3352,6 +3391,7 @@
    "fcfePre": 723.0661956169563,
    "cashOpen": 11654.229171578805,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 12163.094008032082,
    "projectFcf": 3581.6473364532776
   },
@@ -3391,6 +3431,7 @@
    "fcfePre": 752.3593206169573,
    "cashOpen": 12163.094008032082,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 12695.137297837768,
    "projectFcf": 3575.5326648056853
   },
@@ -3430,6 +3471,7 @@
    "fcfePre": 781.6524456169573,
    "cashOpen": 12695.137297837768,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 13250.359040995862,
    "projectFcf": 3569.4179931580934
   },
@@ -3469,6 +3511,7 @@
    "fcfePre": 783.979359766277,
    "cashOpen": 13250.359040995862,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 13809.274660340036,
    "projectFcf": 3543.818744344174
   },
@@ -3508,6 +3551,7 @@
    "fcfePre": 804.3969622662771,
    "cashOpen": 13809.274660340036,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 14382.472782305313,
    "projectFcf": 3528.8081219652768
   },
@@ -3547,6 +3591,7 @@
    "fcfePre": 833.6900872662766,
    "cashOpen": 14382.472782305313,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 14978.848817296046,
    "projectFcf": 3522.692909990733
   },
@@ -3586,6 +3631,7 @@
    "fcfePre": 862.9832122662767,
    "cashOpen": 14978.848817296046,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 15598.402765312236,
    "projectFcf": 3516.5776980161886
   },
@@ -3625,6 +3671,7 @@
    "fcfePre": 865.2456202546398,
    "cashOpen": 15598.402765312236,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 16221.599670406398,
    "projectFcf": 3490.9275300941626
   },
@@ -3664,6 +3711,7 @@
    "fcfePre": 885.6632227546409,
    "cashOpen": 16221.599670406398,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 16859.079966861675,
    "projectFcf": 3475.9177964552764
   },
@@ -3703,6 +3751,7 @@
    "fcfePre": 914.9563477546407,
    "cashOpen": 16859.079966861675,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 17519.73770816833,
    "projectFcf": 3469.8021163066564
   },
@@ -3742,6 +3791,7 @@
    "fcfePre": 944.2494727546409,
    "cashOpen": 17519.73770816833,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 18203.572894326368,
    "projectFcf": 3463.6864361580365
   },
@@ -3781,6 +3831,7 @@
    "fcfePre": 946.4469230389234,
    "cashOpen": 18203.572894326368,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 18890.999747114016,
    "projectFcf": 3437.984977787646
   },
@@ -3820,6 +3871,7 @@
    "fcfePre": 966.864525538923,
    "cashOpen": 18890.999747114016,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 19592.71076613362,
    "projectFcf": 3422.9760190196034
   },
@@ -3859,6 +3911,7 @@
    "fcfePre": 996.1576505389227,
    "cashOpen": 19592.71076613362,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 20317.598820438005,
    "projectFcf": 3416.8599293043862
   },
@@ -3898,6 +3951,7 @@
    "fcfePre": 1025.4507755389238,
    "cashOpen": 20317.598820438005,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 21065.663910027175,
    "projectFcf": 3410.743839589169
   },
@@ -3937,6 +3991,7 @@
    "fcfePre": 1027.5828134151968,
    "cashOpen": 21065.663910027175,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 21817.269004616366,
    "projectFcf": 3384.9907195891924
   },
@@ -3976,6 +4031,7 @@
    "fcfePre": 1048.0004159151968,
    "cashOpen": 21817.269004616366,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 22583.158947038763,
    "projectFcf": 3369.9824424223966
   },
@@ -4015,6 +4071,7 @@
    "fcfePre": 1077.293540915197,
    "cashOpen": 22583.158947038763,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 23372.22556343231,
    "projectFcf": 3363.8659913935458
   },
@@ -4054,6 +4111,7 @@
    "fcfePre": 1106.5866659151964,
    "cashOpen": 23372.22556343231,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 24184.468853797003,
    "projectFcf": 3357.7495403646953
   },
@@ -4093,6 +4151,7 @@
    "fcfePre": 1108.6528334966015,
    "cashOpen": 24184.468853797003,
    "dividend": 0,
+   "equityInject": 0,
    "cashClose": 25000.200115866006,
    "projectFcf": 3331.9443870690016
   },
@@ -4132,6 +4191,7 @@
    "fcfePre": 1129.0704359966026,
    "cashOpen": 25000.200115866006,
    "dividend": 24830.21683000973,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3316.936714143724
   },
@@ -4171,6 +4231,7 @@
    "fcfePre": 1158.3635609966022,
    "cashOpen": 1000,
    "dividend": 853.1930670032348,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3310.8199420032347
   },
@@ -4210,6 +4271,7 @@
    "fcfePre": 1187.6566859966022,
    "cashOpen": 1000,
    "dividend": 876.3694198627454,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3304.703169862745
   },
@@ -4249,6 +4311,7 @@
    "fcfePre": 1189.6565221910787,
    "cashOpen": 1000,
    "dividend": 879.8049856504413,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3278.845610650441
   },
@@ -4288,6 +4351,7 @@
    "fcfePre": 1210.0741246910777,
    "cashOpen": 1000,
    "dividend": 894.0909770907192,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3263.8384770907196
   },
@@ -4327,6 +4391,7 @@
    "fcfePre": 1239.3672496910785,
    "cashOpen": 1000,
    "dividend": 917.2670426863333,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3257.721417686333
   },
@@ -4366,6 +4431,7 @@
    "fcfePre": 1268.6603746910778,
    "cashOpen": 1000,
    "dividend": 940.443108281946,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3251.6043582819466
   },
@@ -4405,6 +4471,7 @@
    "fcfePre": 1270.5934151789172,
    "cashOpen": 1000,
    "dividend": 943.8258942265188,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3225.6940192265183
   },
@@ -4444,6 +4511,7 @@
    "fcfePre": 1291.0110176789174,
    "cashOpen": 1000,
    "dividend": 958.112370089741,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3210.687370089741
   },
@@ -4483,6 +4551,7 @@
    "fcfePre": 1320.304142678918,
    "cashOpen": 1000,
    "dividend": 981.2881771870607,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3204.5700521870604
   },
@@ -4522,6 +4591,7 @@
    "fcfePre": 1349.597267678917,
    "cashOpen": 1000,
    "dividend": 1004.463984284379,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3198.4527342843794
   },
@@ -4561,6 +4631,7 @@
    "fcfePre": 1351.4630448901698,
    "cashOpen": 1000,
    "dividend": 1007.7936148860804,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3172.48923988608
   },
@@ -4600,6 +4671,7 @@
    "fcfePre": 1371.880647390169,
    "cashOpen": 1000,
    "dividend": 1022.080528232581,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3157.4830282325815
   },
@@ -4639,6 +4711,7 @@
    "fcfePre": 3507.2831473901706,
    "cashOpen": 1000,
    "dividend": 3151.3654764840157,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3151.365476484015
   },
@@ -4678,6 +4751,7 @@
    "fcfePre": 3507.2831473901697,
    "cashOpen": 1000,
    "dividend": 3145.2479247354477,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3145.2479247354477
   },
@@ -4717,6 +4791,7 @@
    "fcfePre": 3479.788065481901,
    "cashOpen": 1000,
    "dividend": 3119.230897713078,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3119.230897713078
   },
@@ -4756,6 +4831,7 @@
    "fcfePre": 3470.9125429819014,
    "cashOpen": 1000,
    "dividend": 3110.3541541349086,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3110.3541541349086
   },
@@ -4795,6 +4871,7 @@
    "fcfePre": 3470.9125429819014,
    "cashOpen": 1000,
    "dividend": 3110.3541541349086,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3110.3541541349086
   },
@@ -4834,6 +4911,7 @@
    "fcfePre": 3470.9125429819014,
    "cashOpen": 1000,
    "dividend": 3110.3541541349086,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3110.3541541349086
   },
@@ -4873,6 +4951,7 @@
    "fcfePre": 3443.3492528152738,
    "cashOpen": 1000,
    "dividend": 3090.400740930274,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3090.400740930274
   },
@@ -4912,6 +4991,7 @@
    "fcfePre": 3434.4737303152733,
    "cashOpen": 1000,
    "dividend": 3081.531087761846,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3081.531087761846
   },
@@ -4951,6 +5031,7 @@
    "fcfePre": 3434.4737303152733,
    "cashOpen": 1000,
    "dividend": 3081.531087761846,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3081.531087761846
   },
@@ -4990,6 +5071,7 @@
    "fcfePre": 3434.4737303152733,
    "cashOpen": 1000,
    "dividend": 3081.531087761846,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3081.531087761846
   },
@@ -5029,6 +5111,7 @@
    "fcfePre": 3406.8417544324802,
    "cashOpen": 1000,
    "dividend": 3061.5232063707645,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3061.5232063707645
   },
@@ -5068,6 +5151,7 @@
    "fcfePre": 3397.966231932481,
    "cashOpen": 1000,
    "dividend": 3193.8188300401507,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3193.8188300401507
   },
@@ -5107,6 +5191,7 @@
    "fcfePre": 3397.966231932481,
    "cashOpen": 1000,
    "dividend": 3193.8188300401507,
+   "equityInject": 0,
    "cashClose": 1000,
    "projectFcf": 3193.8188300401507
   },
@@ -5146,6 +5231,7 @@
    "fcfePre": 3004.4358044324813,
    "cashOpen": 1000,
    "dividend": 3800.288402540151,
+   "equityInject": 0,
    "cashClose": 0,
    "projectFcf": 2800.288402540151
   }
@@ -6269,6 +6355,7 @@
   "minCumDSCR": 1.187143523658971,
   "minDSCRAnnual": 1.0073021924292676,
   "minCashClose": 0,
+  "totalEquityInject": 0,
   "totalDividend": 80440.30003403581,
   "totalRevenue": 405788.8886999999,
   "totalOpex": 106510.04740942549,

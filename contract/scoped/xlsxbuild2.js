@@ -248,7 +248,7 @@
     var DEFERRED = [];
     var CFQ_MINDSCR_ROW = null, CFQ_MINCUMDSCR_ROW = null;
     var CFQ_PROJFLOW_ROW = null, CFQ_EQFLOW_ROW = null, CFQ_DIVFLOW_ROW = null, CFQ_INVFLOW_ROW = null;
-    var CFQ_EQFLOWPRE_ROW = null, CFQ_EQIRRPRE_ROW = null;
+    var CFQ_EQFLOWPRE_ROW = null, CFQ_EQIRRPRE_ROW = null, CFQ_INJ_ROW = 25;
     var CFQ_PROJIRR_ROW = null, CFQ_EQIRR_ROW = null, CFQ_DIVIRR_ROW = null, CFQ_INVIRR_ROW = null;
     var CFQ_PROJFLOWPRE_ROW = null, CFQ_PROJIRRPRE_ROW = null;
     var DEBT_CAPEX_SPEND_ROW = null; // Debt 의 '공사비 지출' 행 — CF(Q) IRR용 현금흐름이 참조
@@ -1745,6 +1745,7 @@
       // "그 해 원리금상환재원(현금기준)" 둘 다 이 값을 참조하므로 행 하나로
       // 공유한다.
       var taxAdjRow = 19;
+      var INJ_ROW = 25;          // 추가 출자(운전자금 부족분) 행 — 19~24는 내부용 행이 이미 쓴다
       label(ws, taxAdjRow, '(세금 현금조정, 내부용)', '[KRWm]');
       for (var n = 0; n < N; n++) {
         var ovr0 = ovrByEnd[periods[n].endStr];
@@ -1886,8 +1887,19 @@
         putF(ws, pc(n) + 16, divF, FMT_M, { bold: true });
       }
       putF(ws, 'D16', sumFormula(16), FMT_M, { bold: true });
+      /* 추가 출자(운전자금 부족분) — 현금 잔액은 음수가 될 수 없다.
+         영업현금이 원리금을 못 덮는 분기에는 주주가 부족분을 넣는 것으로 본다(엔진 r.equityInject).
+         기말현금 = 가용현금 − 배당 + 추가출자 → 항상 0 이상. 자기자본 현금흐름(아래 Equity/
+         Investor 행)에서 이 금액을 유출로 뺀다. */
+      label(ws, INJ_ROW, '추가 출자(운전자금 부족분)', '[KRWm]', { bold: true, fill: SUB_FILL });
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + INJ_ROW, 'MAX(0,-(' + pc(n) + availRow + '-' + pc(n) + '16))', FMT_M);
+      }
+      putF(ws, 'D' + INJ_ROW, sumFormula(INJ_ROW), FMT_M, { bold: true });
       label(ws, 17, '기말현금', '[KRWm]');
-      for (var n = 0; n < N; n++) putF(ws, pc(n) + 17, pc(n) + availRow + '-' + pc(n) + '16', FMT_M, { noSum: true });
+      for (var n = 0; n < N; n++) {
+        putF(ws, pc(n) + 17, pc(n) + availRow + '-' + pc(n) + '16+' + pc(n) + INJ_ROW, FMT_M, { noSum: true });
+      }
 
       // 연도별 DSCR·배당 게이트 요약 — "단순DSCR(연 합산)"/"누적DSCR"은 분기
       // 비율이 아니라 연 단위 지표(Report!row233 방식)이고, 배당 결의(decided)/
@@ -2046,19 +2058,19 @@
       r++;
       CFQ_EQFLOW_ROW = r;
       label(ws, r, 'Equity 현금흐름(FCFE 기준)', '[KRWm]');
-      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '13-' + pc(n) + equityDrawRow, FMT_M);
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '13-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW, FMT_M);
       r++;
       // 세전 FCFE = FCFE + FCFE 에서 실제로 빠진 법인세(엔진 r.taxEffective = 발생주의 세금 − 세금 현금조정).
       // 화면의 'Equity IRR (FCFE) 세전' 과 같은 정의.
       CFQ_EQFLOWPRE_ROW = r;
       label(ws, r, 'Equity 현금흐름(FCFE 세전)', '[KRWm]');
       for (var n = 0; n < N; n++) {
-        putF(ws, pc(n) + r, pc(n) + "13-'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + '-' + pc(n) + taxAdjRow + '-' + pc(n) + equityDrawRow, FMT_M);
+        putF(ws, pc(n) + r, pc(n) + "13-'IS(Q)'!" + pc(n) + ISQ_TAX_ROW + '-' + pc(n) + taxAdjRow + '-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW, FMT_M);
       }
       r++;
       CFQ_DIVFLOW_ROW = r;
       label(ws, r, 'Equity 현금흐름(배당 기준)', '[KRWm]');
-      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '16-' + pc(n) + equityDrawRow, FMT_M);
+      for (var n = 0; n < N; n++) putF(ws, pc(n) + r, pc(n) + '16-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW, FMT_M);
       r++;
       CFQ_INVFLOW_ROW = r;
       label(ws, r, 'Investor 현금흐름', '[KRWm]');
@@ -2070,7 +2082,7 @@
         }).join('+') || '0';
         var idcTermF = (n === model.con.codIdx) ? ("+'Debt'!D" + DEBT_IDC_TOTAL_ROW) : '';
         putF(ws, pc(n) + r,
-          '-' + pc(n) + equityDrawRow + '-(' + debtDrawF + ")+'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW + "+'Debt'!" + pc(n) + DEBT_PRIN_TOTAL_ROW + '+' + pc(n) + '16' + idcTermF,
+          '-' + pc(n) + equityDrawRow + '-' + pc(n) + CFQ_INJ_ROW + '-(' + debtDrawF + ")+'Debt'!" + pc(n) + DEBT_INT_TOTAL_ROW + "+'Debt'!" + pc(n) + DEBT_PRIN_TOTAL_ROW + '+' + pc(n) + '16' + idcTermF,
           FMT_M);
       }
       r += 2;
@@ -2145,14 +2157,18 @@
       irrKv('Equity IRR (FCFE) 세전 [%]', CFQ_EQIRRPRE_ROW, '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때, 법인세 전');
       irrKv('Equity IRR (FCFE) 세후 [%]', CFQ_EQIRR_ROW, '위와 같되 법인세 후 — 배당 제한(DSCR·최소현금·배당가능이익)이 없다고 본 값');
       irrKv('Project IRR 세전 [%]', CFQ_PROJIRRPRE_ROW, '차입 없이 사업 전체(총사업비 vs 영업현금흐름)의 수익률, 법인세 전');
-      irrKv('Project IRR 세후 [%]', CFQ_PROJIRR_ROW, '위와 같되 법인세 후');
+      irrKv('Project IRR 세후 [%]', CFQ_PROJIRR_ROW,
+        '실제 납부 법인세 기준 — 이자 손금(차입으로 줄어든 세금)이 반영돼 있어 Equity IRR 세후와 직접 비교하면 안 됩니다. 레버리지 효과는 세전끼리 비교하세요');
       irrKv('Investor IRR [%]', CFQ_INVIRR_ROW, '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·이자·배당 회수 (원본 IRR 시트 정의)');
       kvF('최소 단순DSCR(연 합산) [x]', "'CF(Q)'!D" + CFQ_MINDSCR_ROW, FMT_X);
       kvF('최소 누적DSCR [x]', "'CF(Q)'!D" + CFQ_MINCUMDSCR_ROW, FMT_X);
       /* 운영 중 최저 기말현금 — 음수면 추가 출자/브리지 없이는 성립하지 않는 구조이고
          그 상태의 Equity IRR 은 과대평가된 값이다. 엑셀에서 입력을 바꿔도 보이게 수식으로. */
+      kvF('운전자금 추가 출자 합계 [KRWm]', "'CF(Q)'!D" + CFQ_INJ_ROW, FMT_M);
+      putF(ws, 'E' + (r - 1), 'IF(D' + (r - 1) + '<=1,"추가 출자 없음 (OK)","경고: 영업현금으로 원리금을 못 덮는 분기가 있어 주주가 이 금액을 더 넣어야 합니다 — 위 Equity IRR 에 이미 유출로 반영됨")', '@');
       kvF('운영 중 최저 보유현금 [KRWm]', 'MIN(' + "'CF(Q)'!" + firstC + '17:' + lastC + '17)', FMT_M);
-      putF(ws, 'E' + (r - 1), 'IF(D' + (r - 1) + '>=-1,"운영자금 충족 (OK)","경고: 운영 중 현금 부족 — 추가 출자·브리지가 필요하고 위 Equity IRR 은 과대평가된 값입니다")', '@');
+      ws.getCell('E' + (r - 1)).value = '추가 출자를 반영한 뒤의 최저 잔액 — 0 이상이어야 정상';
+      ws.getCell('E' + (r - 1)).font = { name: FONT, size: 8, color: { argb: 'FF6B7B76' } };
       kvF('총영업수익(전체기간) [KRWm]', "'Revenue'!D" + REV_TOTAL_ROW, FMT_M);
       kvF('총영업비용(전체기간) [KRWm]', "'Opex'!D" + OPEX_TOTAL_ROW, FMT_M);
       kvF('총선순위이자 [KRWm]', "'Debt'!D" + DEBT_INT_TOTAL_ROW, FMT_M);
@@ -2167,14 +2183,16 @@
       (function () {
         var ws = wb.addWorksheet('민감도', { properties: { tabColor: { argb: 'FF14483A' } } });
         ws.getColumn(1).width = 2.5; ws.getColumn(2).width = 18;
-        for (var ci = 0; ci < 10; ci++) ws.getColumn(3 + ci).width = 14;
+        for (var ci = 0; ci < 11; ci++) ws.getColumn(3 + ci).width = 14;
+        ws.getColumn(14).width = 10;   // 판정 등급
+        ws.getColumn(15).width = 72;   // 사유(평이한 설명)
         title(ws, '민감도 분석 — 시나리오별 핵심 지표 비교');
         var r = 4;
         ws.getCell('B' + r).value = '조달(자기자본·부채)은 시나리오별 소요액(총사업비+DSRA+건설이자)에 맞춰 재산정하며 자기자본비율은 기준과 동일하게 유지합니다. 판매단가/총투자비/운영비/금리는 델타가 아니라 절대값 — 빈 칸이면 그 시나리오는 "사업 기본 가정"에 입력한 값을 그대로 쓴다. Base(현재 입력값)는 시나리오를 하나도 안 바꾼 기준선. 화면(생성기)에서 지정한 시나리오를 각각 독립적으로 재계산한 값 — 라이브 수식이 아니라 스냅샷임.';
         ws.getCell('B' + r).font = { name: FONT, size: 9, italic: true, color: { argb: 'FF6B7B76' } };
         r += 2;
         var heads = ['시나리오', '판매단가[원/kWh]', '총사업비[억원]', '운영비[억원]', '금리[%]',
-          'Equity IRR(배당)', 'Equity IRR(FCFE)', 'Project IRR', '최소DSCR', 'NPV[억원]', '투자배수[x]'];
+          'Equity IRR(배당)', 'Equity IRR(FCFE)', 'Project IRR', '최소DSCR', '운영 중 최저현금[KRWm]', 'NPV[억원]', '투자배수[x]', '판정', '사유'];
         heads.forEach(function (h, idx) {
           var c = ws.getCell(colLetter(2 + idx) + r);
           c.value = h;
@@ -2199,9 +2217,38 @@
             put(ws, 'H' + r, k.equityIRR, FMT_P);
             put(ws, 'I' + r, k.projectIRR, FMT_P);
             put(ws, 'J' + r, k.minDSCRAnnual, FMT_X);
-            put(ws, 'K' + r, k.npv / 100, '#,##0');
-            put(ws, 'L' + r, k.equityMultiple, '0.00');
+            put(ws, 'K' + r, k.minCashClose, FMT_M);
+            put(ws, 'L' + r, k.npv / 100, '#,##0');
+            put(ws, 'M' + r, k.equityMultiple, '0.00');
+            /* 판정 — 화면(app2.js sensVerdictParts)이 만든 "등급 + 평이한 사유"를 그대로 싣는다.
+               거래처가 엑셀만 받아도 숫자의 의미를 알 수 있어야 한다. */
+            var vv = row.verdict || { grade: '', why: '' };
+            put(ws, 'N' + r, vv.grade || '', '@');
+            put(ws, 'O' + r, vv.why || '', '@');
+            ws.getCell('O' + r).alignment = { wrapText: true, vertical: 'top' };
+            var gc = vv.grade === '적격' ? 'FF2E7D62' : (vv.grade === '조건부' ? 'FFC2703B' : 'FFB4483E');
+            ws.getCell('N' + r).font = { name: FONT, size: 10, bold: true, color: { argb: gc } };
+            ws.getCell('O' + r).font = { name: FONT, size: 9, color: { argb: 'FF3C4B45' } };
           }
+          r++;
+        });
+        /* 범례 — 판정 기준을 평이한 말로. 이해관계자가 이 시트만 보고도 이해해야 한다. */
+        r += 1;
+        var LEG = [
+          ['적격', 'DSCR 1.2 이상 · 운영 중 자금 부족 없음 · NPV 0 이상 — 금융 조달이 가능하고 투자 기준을 충족합니다.'],
+          ['조건부', 'DSCR 1.0~1.2 — 원리금은 갚지만 여유가 금융권 통상 기준(1.2)에 못 미칩니다. 상환기간 연장·자기자본 확대 등으로 보완이 필요합니다.'],
+          ['부적격', '다음 중 하나라도 해당: ① DSCR 1.0 미만 = 그 해 영업현금으로 원리금을 못 갚음 ② 운영 중 보유현금 음수 = 그 시점에 추가 출자·브리지가 필요하고, 그 돈을 넣지 않은 상태라 같은 행의 수익률은 과대평가된 값 ③ NPV 음수 = 요구수익률(할인율) 기준으로 투자가치가 없음'],
+        ];
+        ws.getCell('B' + r).value = '판정 기준';
+        ws.getCell('B' + r).font = { name: FONT, size: 10, bold: true, color: { argb: 'FF14483A' } };
+        r++;
+        LEG.forEach(function (g) {
+          ws.getCell('B' + r).value = g[0];
+          ws.getCell('B' + r).font = { name: FONT, size: 9, bold: true, color: { argb: g[0] === '적격' ? 'FF2E7D62' : (g[0] === '조건부' ? 'FFC2703B' : 'FFB4483E') } };
+          ws.getCell('C' + r).value = g[1];
+          ws.getCell('C' + r).font = { name: FONT, size: 9, color: { argb: 'FF3C4B45' } };
+          ws.getCell('C' + r).alignment = { wrapText: true, vertical: 'top' };
+          ws.getRow(r).height = 28;
           r++;
         });
       })();

@@ -147,6 +147,11 @@ v1/v2 산출물 다 오프라인 동작 확인됨(`npm run test:ui`/`test:ui2`).
    "사업비를 올렸는데 Equity IRR 이 오르는" 결과가 한 번 더 나왔다(13번째 라운드) —
    `M.computeModel()` 호출 지점을 **전부** 찾아 같은 처리를 적용할 것.
 
+12. **운영 중 현금 잔액은 음수가 될 수 없다.** 영업현금이 원리금을 못 덮는 분기는 부족분을
+   **주주 추가 출자**로 자동 조달하고(`r.equityInject`, 엑셀 CF(Q) 25행) 자기자본 현금흐름에서
+   유출로 뺀다. 예전엔 음수로 두고 경고만 띄워서 배당·IRR 이 과대평가됐다(15번째 라운드).
+   새로운 "불가능한 상태"를 발견하면 경고가 아니라 구조로 막을 것.
+
 ## `.xlsm` 원본에서 값을 뽑을 때
 
 `python3 -c "import openpyxl; wb=openpyxl.load_workbook('reference/당진_..._final.xlsm', data_only=True); ..."`

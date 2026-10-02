@@ -1171,7 +1171,7 @@
       try {
         var scInp = sizeFundingForInput(applyScenario(baseInp, sc), baseRatio);
         var m = M.computeModel(scInp);
-        return { name: sc.name, sc: sc, kpi: m.kpi,
+        return { name: sc.name, sc: sc, kpi: m.kpi, verdict: sensVerdictParts(m.kpi),
           equityEok: scInp.equityEok, debtEok: (scInp.tranches || []).reduce(function (a, t) { return a + (t.amountEok || 0); }, 0) };
       } catch (e) {
         return { name: sc.name, sc: sc, error: e.message };
@@ -1187,17 +1187,48 @@
     );
   }
 
+  /* 시나리오 판정 — 거래처·이해관계자가 그대로 읽을 수 있게 "등급 + 평이한 사유"로 쓴다.
+     재무 약어만 쓰면(IRR 과대 / NPV 음) 숫자만 보고 "낮지만 되는구나"로 오해한다.
+        적격   : DSCR 1.2 이상 · 운영 중 자금부족 없음 · NPV 0 이상
+        조건부 : 위 중 DSCR 여유만 부족(1.0~1.2)
+        부적격 : 원리금 상환 불가(DSCR<1.0) · 운영 중 자금부족 · 요구수익률 미달(NPV<0)
+     엑셀(xlsxbuild2.js)의 같은 판정 문구와 맞춰 둘 것. */
+  function sensVerdictParts(k) {
+    var why = [], grade = '적격';
+    if (k.minDSCRAnnual !== null && k.minDSCRAnnual < 1) {
+      grade = '부적격';
+      why.push('영업현금으로 원리금 상환 불가 (DSCR ' + k.minDSCRAnnual.toFixed(2) + ', 기준 1.0 이상)');
+    } else if (k.minDSCRAnnual !== null && k.minDSCRAnnual < 1.2) {
+      grade = '조건부';
+      why.push('원리금 상환 여유 부족 (DSCR ' + k.minDSCRAnnual.toFixed(2) + ', 금융권 통상 1.2 이상)');
+    }
+    if (k.totalEquityInject > 1) {
+      grade = '부적격';
+      why.push('운영 중 자금 부족으로 추가 출자 ' + feok(k.totalEquityInject) + '억 필요 (왼쪽 수익률에 이미 반영된 값)');
+    }
+    if (k.npv !== null && k.npv < 0) {
+      grade = '부적격';
+      why.push('요구수익률 미달 — NPV ' + feok(k.npv) + '억');
+    }
+    return { grade: grade, why: why.join(' · ') || '금융 조달 가능·투자 기준 충족' };
+  }
+  function sensVerdict(k) {
+    var v = sensVerdictParts(k);
+    var color = v.grade === '적격' ? 'var(--good)' : (v.grade === '조건부' ? 'var(--warn)' : 'var(--bad)');
+    return '<b style="color:' + color + '">' + v.grade + '</b><div style="color:var(--muted);font-size:10.5px;line-height:1.5">' + v.why + '</div>';
+  }
+
   function renderSensResults(results) {
     var box = $('#sensResults');
     box.innerHTML = '';
     var t = el('table', 'tr');
     t.innerHTML = '<thead><tr><th>시나리오</th><th>Equity IRR(배당)</th><th>Equity IRR(FCFE)</th>' +
-      '<th>Project IRR</th><th>최소DSCR</th><th>NPV(억원)</th><th>투자배수</th></tr></thead>';
+      '<th>Project IRR</th><th>최소DSCR</th><th>최저현금(억)</th><th>NPV(억원)</th><th>투자배수</th><th>판정 · 사유</th></tr></thead>';
     var tb = document.createElement('tbody');
     results.forEach(function (r) {
       var tr = document.createElement('tr');
       if (r.error) {
-        tr.innerHTML = '<td>' + r.name + '</td><td colspan="6" style="color:var(--bad)">계산 실패: ' + r.error + '</td>';
+        tr.innerHTML = '<td>' + r.name + '</td><td colspan="8" style="color:var(--bad)">계산 실패: ' + r.error + '</td>';
       } else {
         var k = r.kpi;
         tr.innerHTML = '<td>' + r.name + '</td>' +
@@ -1205,8 +1236,14 @@
           '<td style="text-align:right">' + pct(k.equityIRR) + '%</td>' +
           '<td style="text-align:right">' + pct(k.projectIRR) + '%</td>' +
           '<td style="text-align:right">' + (k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3)) + 'x</td>' +
+          /* 운영 중 최저 보유현금 — 음수면 그 시나리오는 추가 출자·브리지 없이는 성립하지 않고
+             같은 행의 Equity IRR 은 과대평가된 값이다. 표에 안 보이면 놓치게 되므로 같이 싣는다
+             (2026-10-02 Case1 이 -171억인데 표에는 IRR 만 보였다). */
+          '<td style="text-align:right' + (k.minCashClose < -1 ? ';color:var(--bad);font-weight:700' : '') + '">' +
+            (k.minCashClose === null ? '—' : feok(k.minCashClose)) + '</td>' +
           '<td style="text-align:right">' + feok(k.npv) + '</td>' +
-          '<td style="text-align:right">' + fx(k.equityMultiple) + '배</td>';
+          '<td style="text-align:right">' + fx(k.equityMultiple) + '배</td>' +
+          '<td style="font-size:11px">' + sensVerdict(k) + '</td>';
       }
       tb.appendChild(tr);
     });
@@ -1523,13 +1560,14 @@
     /* 운영 중 현금 부족 경고. 조달 부족과 달리 "입력 모순"이 아니라 사업성 결과이므로
        계산은 보여주되, 이 상태에서 배당·FCFE IRR 이 과대평가된다는 걸 분명히 알린다
        (모델은 현금이 음수여도 배당만 0으로 막고 계산을 계속한다). */
-    if (k.minCashClose !== null && k.minCashClose < -1) {
+    if (k.totalEquityInject > 1) {
       var cw = el('div', 'cashWarn');
-      cw.appendChild(el('div', 'cashWarnT', '운영 중 보유현금이 ' + feok(Math.abs(k.minCashClose)) + '억원 부족합니다'));
+      cw.appendChild(el('div', 'cashWarnT', '운영 중 자금이 부족해 추가 출자 ' + feok(k.totalEquityInject) + '억원이 들어갔습니다'));
       cw.appendChild(el('div', 'cashWarnB',
-        '영업현금흐름이 원리금을 못 덮는 구간이 있어 현금이 마이너스로 내려갑니다. 실제로는 그 시점에 ' +
-        '추가 출자나 브리지 대출이 필요하고, 그 돈이 반영되지 않았으므로 아래 Equity IRR(배당·FCFE)은 ' +
-        '과대평가된 값입니다. 상환기간·거치기간·자기자본비율을 조정해 최저 현금이 0 이상이 되게 맞추세요.'));
+        '영업현금흐름이 원리금을 못 덮는 분기가 있어, 부족분을 주주 추가 출자로 메우는 것으로 계산했습니다' +
+        '(현금 잔액은 음수가 될 수 없으므로 반드시 누군가 넣어야 하는 돈입니다). 아래 Equity IRR 에는 이 ' +
+        '출자가 유출로 반영돼 있습니다 — 즉 처음 약정한 자기자본만으로는 사업이 돌아가지 않는 구조입니다. ' +
+        '상환기간 연장·자기자본 확대·DSRA 기준 완화로 추가 출자가 0 이 되게 맞추는 것을 권합니다.'));
       box.appendChild(cw);
     }
 
@@ -1546,7 +1584,7 @@
       ['Equity IRR (FCFE) 세전', pct(k.equityIRRPre), '%', '', (kpiTone(k.equityIRRPre, 'neg') + ' dim').trim()],
       ['Equity IRR (FCFE) 세후', pct(k.equityIRR), '%', '원리금 갚고 남은 현금 전부가 출자자 몫이라고 볼 때(배당 제한 없음)', kpiTone(k.equityIRR, 'neg')],
       ['Project IRR 세전', pct(k.projectIRRPre), '%', '', (kpiTone(k.projectIRRPre, 'neg') + ' dim').trim()],
-      ['Project IRR 세후', pct(k.projectIRR), '%', '차입 없이 사업 전체의 수익률', kpiTone(k.projectIRR, 'neg')],
+      ['Project IRR 세후', pct(k.projectIRR), '%', '실제 납부 법인세 기준(이자 손금 반영) — Equity 세후와 직접 비교하지 마세요. 레버리지 효과는 세전끼리 비교', kpiTone(k.projectIRR, 'neg')],
       ['Investor IRR', pct(k.investorIRR), '%', '출자자+대주단 합산 — 자본·대출 투입 vs 원리금·배당 회수', kpiTone(k.investorIRR, 'neg')]
     ]));
     box.appendChild(kpiGroup('사업 규모·수익구조', [
@@ -1558,9 +1596,11 @@
       ['MW당 연평균 운영비', opexPerMWyr === null ? '—' : f0(opexPerMWyr), 'KRWm/MW/yr']
     ]));
     box.appendChild(kpiGroup('리스크', [
+      ['운전자금 추가 출자', k.totalEquityInject === undefined ? '—' : feok(k.totalEquityInject), '억원',
+        '영업현금으로 원리금을 못 덮는 분기에 주주가 더 넣어야 하는 돈입니다(현금 잔액은 음수가 될 수 없음). 0 이 아니면 약정 자기자본만으로는 사업이 안 돌아가며, 위 Equity IRR 에는 이 출자가 반영돼 있습니다',
+        k.totalEquityInject > 1 ? 'bad' : ''],
       ['운영 중 최저 보유현금', k.minCashClose === null ? '—' : feok(k.minCashClose), '억원',
-        '0 미만이면 그 시점에 추가 출자나 브리지 대출 없이는 성립하지 않는 구조입니다 — 그 상태의 배당·FCFE IRR은 과대평가된 값입니다',
-        kpiTone(k.minCashClose, 'neg')],
+        '추가 출자를 반영한 뒤의 최저 잔액이라 0 이상입니다', ''],
       ['최소 DSCR(연 합산)', k.minDSCRAnnual === null ? '—' : k.minDSCRAnnual.toFixed(3), 'x',
         '연도별 CFADS합/원리금합 중 최솟값 — 1.0 미만이면 그 해 상환재원이 부족했다는 뜻', kpiTone(k.minDSCRAnnual, 'dscr')]
     ]));

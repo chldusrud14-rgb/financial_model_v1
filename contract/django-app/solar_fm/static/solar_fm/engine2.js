@@ -712,7 +712,15 @@
         // 마지막 정산이라 상법상 이익배당 한도가 아니라 청산/자본반환 성격).
         if (i === lastOp) { div = Math.max(0, avail); pendingDiv = 0; }
         r.dividend = div;
-        cashBal = avail - div;
+        /* 현금 잔액은 음수가 될 수 없다 — 현실에 없는 상태다.
+           원리금·운영비를 영업현금으로 못 덮는 분기에는 실제 사업이라면 주주 추가 출자나
+           운전자금 대출이 들어간다. 예전엔 그냥 음수로 뒀고(= 있지도 않은 돈으로 버팀)
+           그 뒤 배당·IRR 이 전부 과대평가됐다(2026-10-02 사용자 지적).
+           재무모델 표준대로 **부족분을 주주 추가 출자로 자동 조달**하고, 그 금액을
+           자기자본 유출로 반영한다(아래 eqFlows/divFlows/investorFlows). */
+        var closing = avail - div;
+        r.equityInject = closing < -1e-9 ? -closing : 0;
+        cashBal = closing + r.equityInject;
         r.cashClose = cashBal;
         // CF(Y)!row14 "배당&유상감자 후 잔액" = 그 해 기초현금(3월 분기
         // 자체의 영업현금흐름은 안 더함) − 그 해 3월 배당. 부채 완제 후
@@ -745,9 +753,11 @@
       con.conPs.forEach(function (cp, ci) { if (cp.n === i) capOut = capex * con.curve[ci]; });
       projFlows.push(rows[i].projectFcf - capOut);
       preFlows.push(ps[i].ebitda - rows[i].decom - rows[i].agentFee + rows[i].wc - capOut);
-      eqFlows.push(rows[i].fcfe - con.draws[0][i]);
-      eqFlowsPre.push(rows[i].fcfePre - con.draws[0][i]);
-      divFlows.push(rows[i].dividend - con.draws[0][i]);
+      // 운전자금 부족분 추가 출자도 주주가 넣는 돈이므로 자기자본 유출에 포함한다
+      var inj = rows[i].equityInject || 0;
+      eqFlows.push(rows[i].fcfe - con.draws[0][i] - inj);
+      eqFlowsPre.push(rows[i].fcfePre - con.draws[0][i] - inj);
+      divFlows.push(rows[i].dividend - con.draws[0][i] - inj);
 
       // Investor IRR: 자본+부채 조달 전체(유출) vs 건설이자·원리금·배당
       // 전체(유입) — `IRR!row33~70`으로 직접 대조해서 확인한 정의. 건설이자
@@ -757,7 +767,7 @@
       var debtDraw = 0;
       con.srcs.forEach(function (s, si) { if (!s.equity) debtDraw += con.draws[si][i]; });
       investorFlows.push(
-        -con.draws[0][i] - debtDraw +
+        -inj - con.draws[0][i] - debtDraw +
         rows[i].interest + rows[i].principal + rows[i].dividend +
         (i === con.codIdx ? con.idcTotal : 0)
       );
@@ -842,6 +852,9 @@
         // 구조다. 모델은 현금이 음수여도 계산을 계속하므로(배당만 0으로 막힘) 이 값을
         // 내보내서 화면·엑셀이 경고할 수 있게 한다.
         minCashClose: rows.length ? Math.min.apply(null, rows.map(function (r) { return r.cashClose || 0; })) : null,
+        // 운전자금 부족분으로 들어간 추가 출자 합계 — 0 이 아니면 약정 자기자본만으로는
+        // 사업이 안 돌아간다는 뜻이고, 위 Equity IRR 은 이 돈까지 넣고 계산된 값이다.
+        totalEquityInject: rows.reduce(function (a, r) { return a + (r.equityInject || 0); }, 0),
         totalDividend: totalDividendKRWm,
         totalRevenue: totalRevenueKRWm,
         totalOpex: totalOpexKRWm,
